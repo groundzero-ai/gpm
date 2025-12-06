@@ -1,6 +1,6 @@
 import type { PullPackageDownload } from '../../types/api.js';
 import { hasPackageVersion } from '../directory.js';
-import { parseDownloadName } from '../remote-pull.js';
+import { parseDownloadIdentifier } from '../remote-pull.js';
 import { logger } from '../../utils/logger.js';
 
 /**
@@ -22,7 +22,7 @@ export async function computeMissingDownloadKeys(downloads: PullPackageDownload[
     }
 
     try {
-      const { name, version } = parseDownloadName(download.name);
+      const { packageName: name, version } = parseDownloadIdentifier(download.name);
       if (!version) {
         continue;
       }

@@ -105,19 +105,65 @@ export interface RemoteBatchPullResult {
   warnings?: string[];
 }
 
-export function parseDownloadName(downloadName: string): { name: string; version: string } {
+/**
+ * Parse a download identifier that may contain registry path segments.
+ *
+ * Supports forms like:
+ *   - foo@1.2.3
+ *   - foo/bar@1.2.3
+ *   - @scope/foo/bar@1.2.3
+ *   - foo@1.2.3/path/to/file
+ *   - @scope/foo@1.2.3/path/to/file
+ *
++ * The registry path (if present) is returned separately so callers can
+ * preserve file-level intent once the backend supports file-scoped downloads.
+ */
+export function parseDownloadIdentifier(
+  downloadName: string
+): { packageName: string; version: string; registryPath?: string } {
   const atIndex = downloadName.lastIndexOf('@');
 
   if (atIndex <= 0 || atIndex === downloadName.length - 1) {
     throw new Error(`Invalid download name '${downloadName}'. Expected format '<package>@<version>'.`);
   }
 
-  return {
-    name: downloadName.slice(0, atIndex),
-    version: downloadName.slice(atIndex + 1)
-  };
+  const rawName = downloadName.slice(0, atIndex);
+  const rawVersion = downloadName.slice(atIndex + 1);
+
+  // Parse package name and optional path from the name portion
+  let packageName: string;
+  let namePath: string | undefined;
+  if (rawName.startsWith('@')) {
+    const segments = rawName.split('/');
+    if (segments.length < 2) {
+      throw new Error(`Invalid scoped package in download name '${downloadName}'.`);
+    }
+    packageName = segments.slice(0, 2).join('/'); // @scope/pkg
+    namePath = segments.length > 2 ? segments.slice(2).join('/') : undefined;
+  } else {
+    const segments = rawName.split('/');
+    packageName = segments[0];
+    namePath = segments.length > 1 ? segments.slice(1).join('/') : undefined;
+  }
+
+  // Parse version and optional path from the version portion
+  const versionSegments = rawVersion.split('/');
+  const version = versionSegments[0];
+  const versionPath = versionSegments.length > 1 ? versionSegments.slice(1).join('/') : undefined;
+
+  if (!packageName || !version) {
+    throw new Error(`Invalid download name '${downloadName}'. Expected format '<package>@<version>'.`);
+  }
+
+  const registryPathParts = [namePath, versionPath].filter(Boolean) as string[];
+  const registryPath = registryPathParts.length > 0 ? registryPathParts.join('/') : undefined;
+
+  return { packageName, version, registryPath };
 }
 
+/**
+ * Backward-compatible wrapper returning only name/version.
+ */
 export function aggregateRecursiveDownloads(responses: PullPackageResponse[]): PullPackageDownload[] {
   const aggregated = new Map<string, PullPackageDownload>();
 
@@ -170,10 +216,10 @@ export async function pullDownloadsBatchFromRemote(
   const tasks = downloads.map(async (download) => {
     const identifier = download.name;
 
-    let parsedName: { name: string; version: string };
+    let parsedName: { packageName: string; version: string; registryPath?: string };
 
     try {
-      parsedName = parseDownloadName(identifier);
+      parsedName = parseDownloadIdentifier(identifier);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn(`Skipping download '${identifier}': ${message}`);
@@ -181,7 +227,7 @@ export async function pullDownloadsBatchFromRemote(
       return;
     }
 
-    const { name, version } = parsedName;
+    const { packageName: name, version } = parsedName;
 
     try {
       if (options.filter && !options.filter(name, version, download)) {

@@ -1,7 +1,12 @@
 import type { RemotePackageMetadataSuccess, RemoteBatchPullResult, RemotePullFailure } from '../remote-pull.js';
 import type { ResolvedPackage } from '../dependency-resolver.js';
 import type { PackageRemoteResolutionOutcome } from './types.js';
-import { fetchRemotePackageMetadata, pullDownloadsBatchFromRemote, aggregateRecursiveDownloads, parseDownloadName } from '../remote-pull.js';
+import {
+  fetchRemotePackageMetadata,
+  pullDownloadsBatchFromRemote,
+  aggregateRecursiveDownloads,
+  parseDownloadIdentifier
+} from '../remote-pull.js';
 import { hasPackageVersion } from '../directory.js';
 import { getVersionInfoFromDependencyTree } from '../../utils/install-helpers.js';
 import { promptOverwriteConfirmation } from '../../utils/prompts.js';
@@ -254,7 +259,7 @@ export async function planRemoteDownloadsForPackage(
 
   for (const download of aggregatedDownloads) {
     try {
-      const { name: downloadName, version: downloadVersion } = parseDownloadName(download.name);
+      const { packageName: downloadName, version: downloadVersion } = parseDownloadIdentifier(download.name);
       const key = createDownloadKey(downloadName, downloadVersion);
       const existsLocally = await hasPackageVersion(downloadName, downloadVersion);
 
