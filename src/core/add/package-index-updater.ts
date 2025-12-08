@@ -15,6 +15,7 @@ import {
   buildIndexMappingForPackageFiles,
   loadOtherPackageIndexes
 } from '../../utils/index-based-installer.js';
+import { UNVERSIONED } from '../../constants/index.js';
 import type { PackageFile } from '../../types/index.js';
 import type { PackageContext } from '../package-context.js';
 import { parseUniversalPath } from '../../utils/platform-file.js';
@@ -357,8 +358,8 @@ export async function buildMappingAndWriteIndex(
     }
 
     if (!version) {
-      logger.debug(`No version found for ${packageName}, skipping index update`);
-      return;
+      version = UNVERSIONED;
+      logger.debug(`No version found for ${packageName}, defaulting to ${UNVERSIONED} for index update`);
     }
 
     // Build mapping using same flow as install
