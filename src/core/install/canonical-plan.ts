@@ -6,6 +6,7 @@ import { getLocalPackageYmlPath } from '../../utils/paths.js';
 import { parsePackageYml } from '../../utils/package-yml.js';
 import { createCaretRange, parseVersionRange } from '../../utils/version-ranges.js';
 import { arePackageNamesEquivalent } from '../../utils/package-name.js';
+import { UNVERSIONED } from '../../constants/index.js';
 
 export type DependencyTarget = 'packages' | 'dev-packages';
 
@@ -186,6 +187,12 @@ export function resolvePersistRange(
 
   if (decision.type === 'explicit') {
     return { range: decision.range, target: decision.target };
+  }
+
+  // For unversioned selections, persist the literal marker instead of attempting
+  // to construct a semver caret range.
+  if (selectedVersion === UNVERSIONED) {
+    return { range: UNVERSIONED, target: decision.target };
   }
 
   const derivedRange = createCaretRange(selectedVersion);

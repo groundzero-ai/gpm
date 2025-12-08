@@ -143,9 +143,15 @@ export async function resolveDependencies(
     }
   }
 
-  const hasConstraints = allRanges.length > 0;
   const dedupedRanges = Array.from(new Set(allRanges));
-  const combinedRangeLabel = hasConstraints ? dedupedRanges.join(' & ') : undefined;
+  const normalizedRanges = dedupedRanges.map(r => r.trim()).filter(Boolean);
+  const isWildcardRange = (range: string) => {
+    const normalized = range.toLowerCase();
+    return normalized === '*' || normalized === 'latest';
+  };
+  const constraintRanges = normalizedRanges.filter(range => !isWildcardRange(range));
+  const hasConstraints = constraintRanges.length > 0;
+  const combinedRangeLabel = hasConstraints ? constraintRanges.join(' & ') : undefined;
 
   const filterAvailableVersions = (versions: string[]): string[] => {
     if (!hasConstraints) {
@@ -153,7 +159,11 @@ export async function resolveDependencies(
     }
 
     return versions.filter(versionCandidate => {
-      return allRanges.every(range => {
+      return constraintRanges.every(range => {
+        if (versionCandidate === UNVERSIONED) {
+          return false; // When explicit semver constraints exist, unversioned cannot satisfy them
+        }
+
         try {
           return semver.satisfies(versionCandidate, range, { includePrerelease: true });
         } catch (error) {

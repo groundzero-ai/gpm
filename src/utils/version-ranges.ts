@@ -1,4 +1,5 @@
 import * as semver from 'semver';
+import { UNVERSIONED } from '../constants/index.js';
 import { parseWipVersion } from './version-generator.js';
 
 /**
@@ -332,7 +333,9 @@ export function selectVersionWithWipPolicy(
   options?: VersionSelectionOptions
 ): VersionSelectionResult {
   const parsedRange = parseVersionRange(range);
-  const deduped = dedupeValidVersions(availableVersions);
+  const hasUnversioned = availableVersions.includes(UNVERSIONED);
+  const semverCandidates = availableVersions.filter(version => version !== UNVERSIONED);
+  const deduped = dedupeValidVersions(semverCandidates);
   const availableStable = sortVersionsDesc(deduped.filter(version => !isPrereleaseVersion(version)));
   const availablePrerelease = sortVersionsDesc(deduped.filter(version => isPrereleaseVersion(version)));
   const satisfyingStable: string[] = [];
@@ -348,6 +351,23 @@ export function selectVersionWithWipPolicy(
     reason: 'none'
   };
 
+  const finish = (): VersionSelectionResult => {
+    if (!result.version && parsedRange.type === 'wildcard' && hasUnversioned) {
+      result.version = UNVERSIONED;
+      result.reason = 'wildcard';
+      result.isPrerelease = false;
+      if (!result.satisfyingStable.includes(UNVERSIONED)) {
+        result.satisfyingStable.push(UNVERSIONED);
+      }
+    }
+
+    if (hasUnversioned && !result.availableStable.includes(UNVERSIONED)) {
+      result.availableStable = [...result.availableStable, UNVERSIONED];
+    }
+
+    return result;
+  };
+
   if (parsedRange.type === 'exact') {
     result.reason = 'exact';
     const exactMatch = deduped.find(version => semver.eq(version, parsedRange.baseVersion));
@@ -360,7 +380,7 @@ export function selectVersionWithWipPolicy(
       }
       result.version = exactMatch;
     }
-    return result;
+    return finish();
   }
 
   const normalizedRange = parsedRange.type === 'wildcard' ? '*' : parsedRange.range;
@@ -377,23 +397,23 @@ export function selectVersionWithWipPolicy(
       result.reason = 'wildcard';
       if (satisfyingStable.length > 0) {
         result.version = satisfyingStable[0];
-        return result;
+        return finish();
       }
       if (satisfyingPrerelease.length > 0) {
         result.version = satisfyingPrerelease[0];
         result.isPrerelease = true;
       }
-      return result;
+      return finish();
     }
 
     result.reason = 'range';
     if (satisfyingStable.length > 0) {
       result.version = satisfyingStable[0];
-      return result;
+      return finish();
     }
 
     if (satisfyingPrerelease.length === 0) {
-      return result;
+      return finish();
     }
 
     const explicitIntent =
@@ -406,7 +426,7 @@ export function selectVersionWithWipPolicy(
       result.isPrerelease = true;
     }
 
-    return result;
+    return finish();
   }
 
   // Default policy: Latest wins (stable and WIP treated uniformly)
@@ -422,13 +442,13 @@ export function selectVersionWithWipPolicy(
   }
 
   if (allSatisfying.length === 0) {
-    return result;
+    return finish();
   }
 
   const selected = allSatisfying[0];
   result.version = selected;
   result.isPrerelease = isPrereleaseVersion(selected);
-  return result;
+  return finish();
 }
 
 function dedupeValidVersions(versions: string[]): string[] {

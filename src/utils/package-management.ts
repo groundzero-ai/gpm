@@ -8,6 +8,7 @@ import { getLocalOpenPackageDir, getLocalPackageYmlPath, getLocalPackagesDir, ge
 import { DEPENDENCY_ARRAYS, FILE_PATTERNS, PACKAGE_PATHS } from '../constants/index.js';
 import { createCaretRange, hasExplicitPrereleaseIntent, isPrereleaseVersion } from './version-ranges.js';
 import { extractBaseVersion } from './version-generator.js';
+import { isUnversionedVersion } from './package-versioning.js';
 import { normalizePackageName, arePackageNamesEquivalent } from './package-name.js';
 import { packageManager } from '../core/package.js';
 import { promptPackageDetailsForNamed } from './prompts.js';
@@ -186,7 +187,7 @@ export async function addPackageToYml(
 
   let versionToWrite: string | undefined = originalVersion;
 
-  if (packageVersion) {
+  if (packageVersion && !isUnversionedVersion(packageVersion)) {
     const baseVersion = extractBaseVersion(packageVersion);
     const defaultRange = createCaretRange(baseVersion);
     versionToWrite = originalVersion ?? defaultRange;
