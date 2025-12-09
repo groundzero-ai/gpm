@@ -19,7 +19,7 @@ import { pullMissingDependenciesIfNeeded } from './remote-flow.js';
 import { handleDryRunMode } from './dry-run.js';
 import { displayInstallationResults, formatSelectionSummary } from './install-reporting.js';
 import { buildNoVersionFoundError } from './install-errors.js';
-import { createWorkspacePackageYml, addPackageToYml, writeLocalPackageFromRegistry, updatePackageDependencyFiles } from '../../utils/package-management.js';
+import { createWorkspacePackageYml, addPackageToYml, writeLocalPackageFromRegistry, updatePackageDependencyInclude } from '../../utils/package-management.js';
 import { resolvePlatforms } from './platform-resolution.js';
 import { getLocalPackageYmlPath, getInstallRootDir, isRootPackage } from '../../utils/paths.js';
 import { exists } from '../../utils/fs.js';
@@ -70,27 +70,27 @@ function dedupeRegistryPaths(paths: string[]): string[] {
 async function resolveInstallIntent(args: {
   packageName: string;
   dependencyState: 'fresh' | 'existing';
-  existingFiles?: string[];
+  existingInclude?: string[];
   normalizedRegistryPath?: string;
   dryRun: boolean;
   canPrompt: boolean;
-}): Promise<{ installPaths?: string[]; persistFiles?: string[] | null }> {
-  const { packageName, dependencyState, existingFiles, normalizedRegistryPath, dryRun, canPrompt } = args;
+}): Promise<{ installPaths?: string[]; persistInclude?: string[] | null }> {
+  const { packageName, dependencyState, existingInclude, normalizedRegistryPath, dryRun, canPrompt } = args;
 
   // Path-based request
   if (normalizedRegistryPath) {
-    if (dependencyState === 'existing' && !existingFiles) {
+    if (dependencyState === 'existing' && !existingInclude) {
       throw new Error(
         `${packageName} is already a full dependency. To install a subset, uninstall the package first and re-install subset.`
       );
     }
-    const base = existingFiles ?? [];
+    const base = existingInclude ?? [];
     const next = dedupeRegistryPaths([...base, normalizedRegistryPath]);
-    return { installPaths: next, persistFiles: next };
+    return { installPaths: next, persistInclude: next };
   }
 
   // Existing partial dependency, no path provided
-  if (existingFiles) {
+  if (existingInclude) {
     if (!dryRun && canPrompt) {
       const prompt = await safePrompts({
         type: 'confirm',
@@ -100,15 +100,15 @@ async function resolveInstallIntent(args: {
       });
       const switchToFull = Boolean((prompt as any).confirmFull);
       if (switchToFull) {
-        return { installPaths: undefined, persistFiles: null };
+        return { installPaths: undefined, persistInclude: null };
       }
-      return { installPaths: existingFiles, persistFiles: existingFiles };
+      return { installPaths: existingInclude, persistInclude: existingInclude };
     }
-    return { installPaths: existingFiles, persistFiles: existingFiles };
+    return { installPaths: existingInclude, persistInclude: existingInclude };
   }
 
   // Default full install
-  return { installPaths: undefined, persistFiles: undefined };
+  return { installPaths: undefined, persistInclude: undefined };
 }
 
 export async function runInstallPipeline(
@@ -156,15 +156,15 @@ export async function runInstallPipeline(
     ? normalizeRegistryPath(options.registryPath)
     : undefined;
 
-  const existingFiles =
-    canonicalPlan.dependencyFiles && canonicalPlan.dependencyFiles.length > 0
-      ? dedupeRegistryPaths(canonicalPlan.dependencyFiles)
+  const existingInclude =
+    canonicalPlan.dependencyInclude && canonicalPlan.dependencyInclude.length > 0
+      ? dedupeRegistryPaths(canonicalPlan.dependencyInclude)
       : undefined;
 
-  const { installPaths, persistFiles } = await resolveInstallIntent({
+  const { installPaths, persistInclude } = await resolveInstallIntent({
     packageName: options.packageName,
     dependencyState: canonicalPlan.dependencyState,
-    existingFiles,
+    existingInclude,
     normalizedRegistryPath,
     dryRun,
     canPrompt: Boolean(process.stdin.isTTY && process.stdout.isTTY)
@@ -360,12 +360,12 @@ export async function runInstallPipeline(
   const mainPackage = finalResolvedPackages.find(pkg => pkg.isRoot);
   if (packageYmlExists && mainPackage) {
     const persistTarget = resolvePersistRange(canonicalPlan.persistDecision, mainPackage.version);
-    const filesTarget =
-      persistFiles === undefined
+    const includeTarget =
+      persistInclude === undefined
         ? undefined
-        : persistFiles === null
+        : persistInclude === null
           ? null
-          : dedupeRegistryPaths(persistFiles);
+          : dedupeRegistryPaths(persistInclude);
 
     const targetDependencyArray =
       persistTarget?.target ??
@@ -380,14 +380,14 @@ export async function runInstallPipeline(
         targetDependencyArray === 'dev-packages',
         persistTarget.range,
         true,
-        filesTarget ?? undefined
+        includeTarget ?? undefined
       );
-    } else if (filesTarget !== undefined) {
-      await updatePackageDependencyFiles(
+    } else if (includeTarget !== undefined) {
+      await updatePackageDependencyInclude(
         cwd,
         options.packageName,
         targetDependencyArray,
-        filesTarget
+        includeTarget
       );
     }
   }

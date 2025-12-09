@@ -3,7 +3,7 @@ import { CommandResult, Package, PackageFile, PackageDependency } from '../../ty
 import { DIR_PATTERNS, PACKAGE_PATHS, UNVERSIONED } from '../../constants/index.js'
 import { exists, ensureDir, readTextFile, writeTextFile } from '../../utils/fs.js'
 import { normalizePathForProcessing, isWithinDirectory } from '../../utils/path-normalization.js'
-import { createWorkspacePackageYml, ensurePackageWithYml, addPackageToYml, updatePackageDependencyFiles, writeLocalPackageFromRegistry } from '../../utils/package-management.js'
+import { createWorkspacePackageYml, ensurePackageWithYml, addPackageToYml, updatePackageDependencyInclude, writeLocalPackageFromRegistry } from '../../utils/package-management.js'
 import { packageManager } from '../package.js'
 import { getLocalPackageDir, getLocalPackageYmlPath } from '../../utils/paths.js'
 import { parsePackageYml } from '../../utils/package-yml.js'
@@ -77,11 +77,11 @@ export async function runSingleFileSave(
 		versionOverride: UNVERSIONED
 	})
 
-	// Ensure dependency entry and files list in workspace package.yml
+	// Ensure dependency entry and include list in workspace package.yml
 	const targetArray: 'packages' | 'dev-packages' = options.dev ? 'dev-packages' : 'packages'
 	await addPackageToYml(cwd, SINGLE_FILE_PACKAGE, undefined, options.dev ?? false, undefined, true, undefined)
-	const mergedFiles = await mergeDependencyFiles(cwd, targetArray, registryPath)
-	await updatePackageDependencyFiles(cwd, SINGLE_FILE_PACKAGE, targetArray, mergedFiles)
+	const mergedInclude = await mergeDependencyInclude(cwd, targetArray, registryPath)
+	await updatePackageDependencyInclude(cwd, SINGLE_FILE_PACKAGE, targetArray, mergedInclude)
 
 	// Persist updated f package to local registry
 	const pkg: Package = {
@@ -149,7 +149,7 @@ function resolveRegistryPath(normalizedInput: string, absolutePath: string): str
 	return normalizedInput
 }
 
-async function mergeDependencyFiles(
+async function mergeDependencyInclude(
 	cwd: string,
 	targetArray: 'packages' | 'dev-packages',
 	newPath: string
@@ -161,8 +161,8 @@ async function mergeDependencyFiles(
 	if (config && config[targetArray]) {
 		const deps = config[targetArray] as PackageDependency[]
 		const idx = deps.findIndex(dep => arePackageNamesEquivalent(dep.name, SINGLE_FILE_PACKAGE))
-		if (idx >= 0 && Array.isArray(deps[idx].files)) {
-			currentFiles.push(...deps[idx].files as string[])
+		if (idx >= 0 && Array.isArray(deps[idx].include)) {
+			currentFiles.push(...deps[idx].include as string[])
 		}
 	}
 
