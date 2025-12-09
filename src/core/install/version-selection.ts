@@ -370,8 +370,9 @@ function extractVersionsFromRemoteResponse(response: PullPackageResponse): strin
     }
   }
 
-  if (response.version?.version) {
-    collected.add(response.version.version);
+  if (response.version) {
+    const normalizedVersion = response.version.version ?? UNVERSIONED;
+    collected.add(normalizedVersion);
   }
 
   return Array.from(collected);
