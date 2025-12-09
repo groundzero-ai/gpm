@@ -74,35 +74,41 @@ export class HttpClient {
    */
   async downloadFile(url: string, options?: RequestOptions): Promise<ArrayBuffer> {
     logger.debug(`Downloading file from: ${url}`);
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-    
+
+		const authHeaders = options?.skipAuth ? {} : await this.getAuthHeaders();
+		const headers = {
+			...authHeaders,
+			...options?.headers,
+		};
+
     try {
       const response = await fetch(url, {
         method: 'GET',
         signal: options?.signal || controller.signal,
-        headers: options?.headers
+				headers
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
-      
+
       const arrayBuffer = await response.arrayBuffer();
       logger.debug(`Downloaded ${arrayBuffer.byteLength} bytes`);
-      
+
       return arrayBuffer;
     } catch (error) {
       clearTimeout(timeoutId);
-      
+
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`Download timeout after ${this.timeout}ms`);
       }
-      
-      logger.debug('Download failed', { error, url });
+
+			logger.debug('Download failed', { error, url });
       throw error;
     }
   }

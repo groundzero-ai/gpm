@@ -211,14 +211,16 @@ export class PackageManager {
     }
 
     const manifestPath = join(packagePath, PACKAGE_PATHS.MANIFEST_RELATIVE);
-    let isPartial = false;
-    try {
-      if (await exists(manifestPath)) {
+    const manifestExists = await exists(manifestPath);
+    let isPartial = !manifestExists;
+    if (manifestExists) {
+      try {
         const manifest = await parsePackageYml(manifestPath);
         isPartial = Boolean((manifest as any).partial);
+      } catch (error) {
+        logger.warn('Failed to read package manifest for partial state', { packageName, version, error });
+        isPartial = true;
       }
-    } catch (error) {
-      logger.warn('Failed to read package manifest for partial state', { packageName, version, error });
     }
 
     const paths = await this.listPackageFilePaths(packagePath);

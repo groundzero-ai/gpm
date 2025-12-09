@@ -123,22 +123,11 @@ async function performRecursivePull(
   response: PullPackageResponse,
   context: RemotePullContext,
   registryUrl: string,
-  profile: string,
-  partialConfig?: PartialPullConfig
+  profile: string
 ): Promise<{ packageName: string; version: string; files: number; size: number; checksum: string; registry: string; profile: string; isPrivate: boolean; downloadUrl: string; message: string }> {
-  const partialRoot =
-    partialConfig && partialConfig.requestPaths.length > 0
-      ? {
-          name: parsedName,
-          version: versionToPull,
-          partial: true,
-          localState: partialConfig.localState
-        }
-      : undefined;
-
   const { downloadKeys, warnings: planWarnings } = await planRemoteDownloadsForPackage(
     { success: true, context, response },
-    { partialRoot }
+    {}
   );
 
   if (planWarnings.length > 0) {
@@ -175,10 +164,6 @@ async function performRecursivePull(
         const downloadKey = `${dependencyName}@${dependencyVersion}`;
         return downloadKeys.has(downloadKey);
       },
-      paths: partialConfig?.requestPaths,
-      primaryName: parsedName,
-      primaryVersion: versionToPull,
-      partialLocalState: partialConfig?.localState,
       skipIfFull: true
     });
     downloadSpinner.stop();
@@ -234,8 +219,7 @@ async function performSinglePull(
       ...pullOptions,
       preFetchedResponse: response,
       httpClient: context.httpClient,
-      paths: partialConfig?.requestPaths,
-      partialLocalState: partialConfig?.localState
+      paths: partialConfig?.requestPaths
     });
     downloadSpinner.stop();
 
@@ -341,7 +325,7 @@ async function pullPackageCommand(
     if (requestedPaths.length > 0) {
       console.log(`✓ Partial pull requested for paths: ${requestedPaths.join(', ')}`);
       if (options.recursive) {
-        console.log('ℹ️  Dependencies will be pulled fully; paths apply only to the primary package.');
+        console.log('✓ Dependencies will be pulled fully; paths apply only to the primary package.');
       }
       console.log('');
     }
@@ -371,7 +355,7 @@ async function pullPackageCommand(
       }
 
       if (localState.isPartial) {
-        console.log('ℹ️  Existing partial version found locally; merging with remote content (remote wins on conflicts).');
+        console.log('✓ Existing partial version found locally; merging with remote content (remote wins on conflicts).');
         console.log('');
       }
 
@@ -388,7 +372,7 @@ async function pullPackageCommand(
 
     // Perform the actual pull operation
     const result = options.recursive
-      ? await performRecursivePull(parsedName, versionToPull, response, context, registryUrl, profile, partialConfig)
+      ? await performRecursivePull(parsedName, versionToPull, response, context, registryUrl, profile)
       : await performSinglePull(parsedName, parsedVersion, response, context, pullOptions, registryUrl, profile, partialConfig);
 
     // Display results

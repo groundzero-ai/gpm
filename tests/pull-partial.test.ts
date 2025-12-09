@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -80,17 +80,19 @@ async function runPartialMergeTest(): Promise<void> {
       createdAt: '',
       updatedAt: ''
     },
-    downloads: [{ name: 'partial-merge@1.0.0', downloadUrl: 'https://example.com/mock' }]
+    downloads: [{
+      name: 'partial-merge@1.0.0',
+      downloadUrl: 'https://example.com/mock',
+      include: ['docs/old.md', 'docs/new.md']
+    }]
   };
 
-  const existingState = await packageManager.getPackageVersionState('partial-merge', '1.0.0');
   await pullPackageFromRemote('partial-merge', '1.0.0', {
     preFetchedResponse: response as any,
     httpClient: new StubHttpClient(tarball.buffer) as any,
     paths: ['docs/old.md', 'docs/new.md'],
     savePaths: ['docs/old.md', 'docs/new.md'],
-    mergeIntoExisting: true,
-    partialLocalState: existingState
+    mergeIntoExisting: true
   });
 
   const pkgPath = getPackageVersionPath('partial-merge', '1.0.0');
@@ -138,7 +140,11 @@ async function runIntegritySkipTest(): Promise<void> {
       createdAt: '',
       updatedAt: ''
     },
-    downloads: [{ name: 'integrity-partial@1.0.0', downloadUrl: 'https://example.com/mock' }]
+    downloads: [{
+      name: 'integrity-partial@1.0.0',
+      downloadUrl: 'https://example.com/mock',
+      include: ['docs/file.md']
+    }]
   };
 
   const result = await pullPackageFromRemote('integrity-partial', '1.0.0', {
@@ -153,11 +159,26 @@ async function runIntegritySkipTest(): Promise<void> {
   assert(state.paths.includes('docs/file.md'));
 }
 
+async function runMissingManifestPartialDetectionTest(): Promise<void> {
+  const pkgName = 'missing-manifest-partial';
+  const version = '1.0.0';
+  const pkgPath = getPackageVersionPath(pkgName, version);
+
+  await mkdir(join(pkgPath, 'docs'), { recursive: true });
+  await writeFile(join(pkgPath, 'docs', 'file.md'), 'missing manifest', 'utf8');
+
+  const state = await packageManager.getPackageVersionState(pkgName, version);
+  assert.equal(state.exists, true);
+  assert.equal(state.isPartial, true);
+  assert(state.paths.includes('docs/file.md'));
+}
+
 try {
   await runEndpointTest();
   await runParseSpecTest();
   await runPartialMergeTest();
   await runIntegritySkipTest();
+  await runMissingManifestPartialDetectionTest();
 
   console.log('pull partial tests passed');
 } finally {

@@ -50,14 +50,11 @@ export interface RemotePullOptions {
   httpClient?: HttpClient;
   recursive?: boolean;
   paths?: string[];
-  partialLocalState?: PackageVersionState;
 }
 
 export interface RemoteBatchPullOptions extends RemotePullOptions {
   dryRun?: boolean;
   filter?: (name: string, version: string, download: PullPackageDownload) => boolean;
-  primaryName?: string;
-  primaryVersion?: string;
   skipIfFull?: boolean;
 }
 
@@ -246,6 +243,10 @@ export function aggregateRecursiveDownloads(responses: PullPackageResponse[]): P
   return Array.from(aggregated.values());
 }
 
+export function isPartialDownload(download?: PullPackageDownload): boolean {
+  return Array.isArray(download?.include);
+}
+
 export async function pullDownloadsBatchFromRemote(
   responses: PullPackageResponse | PullPackageResponse[],
   options: RemoteBatchPullOptions = {}
@@ -261,19 +262,22 @@ export async function pullDownloadsBatchFromRemote(
   const context = await createContext(options);
   const httpClient = context.httpClient;
 
-  const primaryName = options.primaryName ?? responseArray[0]?.package?.name;
-  const primaryVersion = options.primaryVersion ?? responseArray[0]?.version?.version;
-  const primaryRequestPaths = normalizeDownloadPaths(options.paths);
-  const primaryState: PackageVersionState | undefined =
-    primaryName && primaryVersion
-      ? options.partialLocalState ?? await packageManager.getPackageVersionState(primaryName, primaryVersion)
-      : undefined;
-  const shouldSkipFullPrimary = primaryRequestPaths.length > 0 && options.skipIfFull !== false;
-
   const downloads = aggregateRecursiveDownloads(responseArray);
   const pulled: BatchDownloadItemResult[] = [];
   const failed: BatchDownloadItemResult[] = [];
   const warnings: string[] = [];
+  const stateCache = new Map<string, PackageVersionState>();
+
+  const getLocalState = async (name: string, version: string): Promise<PackageVersionState> => {
+    const key = `${name}@${formatVersionLabel(version)}`;
+    const cached = stateCache.get(key);
+    if (cached) {
+      return cached;
+    }
+    const state = await packageManager.getPackageVersionState(name, version);
+    stateCache.set(key, state);
+    return state;
+  };
 
   const tasks = downloads.map(async (download) => {
     const identifier = download.name;
@@ -290,12 +294,7 @@ export async function pullDownloadsBatchFromRemote(
     }
 
     const { packageName: name, version } = parsedName;
-    const matchesPrimary = Boolean(
-      primaryName &&
-      primaryVersion &&
-      name === primaryName &&
-      formatVersionLabel(version) === formatVersionLabel(primaryVersion)
-    );
+    const isPartial = isPartialDownload(download);
 
     try {
       if (options.filter && !options.filter(name, version, download)) {
@@ -310,12 +309,15 @@ export async function pullDownloadsBatchFromRemote(
         return;
       }
 
-      if (matchesPrimary && primaryRequestPaths.length > 0 && shouldSkipFullPrimary && primaryState?.exists && !primaryState.isPartial) {
-        const skipMessage = `${name}@${version} already exists locally (full); skipping partial pull`;
-        logger.info(skipMessage);
-        warnings.push(skipMessage);
-        pulled.push({ name, version, downloadUrl: download.downloadUrl, success: true });
-        return;
+      if (isPartial && options.skipIfFull !== false) {
+        const localState = await getLocalState(name, version);
+        if (localState.exists && !localState.isPartial) {
+          const skipMessage = `${name}@${version} already exists locally (full); skipping partial download`;
+          logger.info(skipMessage);
+          warnings.push(skipMessage);
+          pulled.push({ name, version, downloadUrl: download.downloadUrl, success: true });
+          return;
+        }
       }
 
       if (options.dryRun) {
@@ -329,7 +331,7 @@ export async function pullDownloadsBatchFromRemote(
 
       await packageManager.savePackage(
         { metadata, files: extracted.files },
-        { partial: matchesPrimary && primaryRequestPaths.length > 0 }
+        { partial: isPartial }
       );
 
       pulled.push({ name, version, downloadUrl: download.downloadUrl, success: true });
@@ -424,8 +426,6 @@ export async function pullPackageFromRemote(
   options: RemotePullOptions = {}
 ): Promise<RemotePullResult> {
   try {
-    const requestPaths = normalizeDownloadPaths(options.paths);
-
     const metadataResult = options.preFetchedResponse
       ? await createResultFromPrefetched(options)
       : await fetchRemotePackageMetadata(name, version, options);
@@ -435,8 +435,8 @@ export async function pullPackageFromRemote(
     }
 
     const { context, response } = metadataResult;
-    const downloadUrl = resolveDownloadUrl(response);
-    if (!downloadUrl) {
+    const primaryDownload = resolvePrimaryDownload(response);
+    if (!primaryDownload?.downloadUrl) {
       return {
         success: false,
         reason: 'access-denied',
@@ -444,9 +444,10 @@ export async function pullPackageFromRemote(
       };
     }
 
-    const tarballBuffer = await downloadPackageTarball(context.httpClient, downloadUrl);
+    const isPartial = isPartialDownload(primaryDownload);
+    const tarballBuffer = await downloadPackageTarball(context.httpClient, primaryDownload.downloadUrl);
 
-    const expectedSize = requestPaths.length === 0 ? response.version.tarballSize : undefined;
+    const expectedSize = isPartial ? undefined : response.version.tarballSize;
     if (!verifyTarballIntegrity(tarballBuffer, expectedSize)) {
       return {
         success: false,
@@ -458,7 +459,7 @@ export async function pullPackageFromRemote(
     const extracted = await extractPackageFromTarball(tarballBuffer);
 
     await savePackageToLocalRegistry(response, extracted, {
-      partial: requestPaths.length > 0
+      partial: isPartial
     });
 
     return {
@@ -469,7 +470,7 @@ export async function pullPackageFromRemote(
       extracted,
       registryUrl: context.registryUrl,
       profile: context.profile,
-      downloadUrl,
+      downloadUrl: primaryDownload.downloadUrl,
       tarballSize: response.version.tarballSize
     };
   } catch (error) {
@@ -477,18 +478,18 @@ export async function pullPackageFromRemote(
   }
 }
 
-function resolveDownloadUrl(response: PullPackageResponse): string | undefined {
+function resolvePrimaryDownload(response: PullPackageResponse): PullPackageDownload | undefined {
   if (!Array.isArray(response.downloads) || response.downloads.length === 0) {
     return undefined;
   }
 
   const primaryMatch = response.downloads.find(download => download.name === response.package.name && download.downloadUrl);
   if (primaryMatch?.downloadUrl) {
-    return primaryMatch.downloadUrl;
+    return primaryMatch;
   }
 
   const fallbackMatch = response.downloads.find(download => download.downloadUrl);
-  return fallbackMatch?.downloadUrl;
+  return fallbackMatch;
 }
 
 async function createResultFromPrefetched(options: RemotePullOptions): Promise<RemotePackageMetadataResult> {
