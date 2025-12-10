@@ -100,6 +100,7 @@ export async function ensurePackageWithYml(
   } else {
     isNew = true;
     if (options.interactive) {
+      console.log(`Create new package "${normalizedName}"`);
       packageConfig = await promptPackageDetailsForNamed(normalizedName);
     } else {
       packageConfig = {

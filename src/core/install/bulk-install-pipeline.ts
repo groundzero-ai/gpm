@@ -24,10 +24,10 @@ interface BulkPackageEntry {
 }
 
 export async function runBulkInstallPipeline(
-  targetDir: string,
   options: InstallOptions
 ): Promise<CommandResult> {
   const cwd = process.cwd();
+  const targetDir = '.';
 
   await ensureRegistryDirectories();
   await createWorkspacePackageYml(cwd);
