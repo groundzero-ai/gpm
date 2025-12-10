@@ -1,7 +1,7 @@
 # OpenPackage
 
 <a href="https://www.npmjs.com/package/opkg " target="blank">
-  <img src="https://img.shields.io/npm/v/opkg ?style=flat-square" alt="Npm package for OpenPackage">
+  <img src="https://img.shields.io/npm/v/opkg?style=flat-square" alt="Npm package for OpenPackage">
 </a>
 <a href="https://discord.gg/W5H54HZ8Fm"  target="blank">
   <img src="https://img.shields.io/badge/Discord-%235865F2.svg?&logo=discord&logoColor=white&style=flat-square" alt="OpenPackage Discord">
@@ -32,6 +32,16 @@ npm install -g opkg
 
 ### Reuse files across multiple codebases
 Reuse rules, slash commands, and more across multiple codebases.
+
+#### Single file
+```bash title="Terminal"
+# In current codebase
+opkg save f specs/nextjs.md
+# In another codebase
+opkg install f/specs/nextjs.md
+```  
+
+#### Multiple files via package
 ```bash title="Terminal"
 # In current codebase
 opkg save essentials
@@ -50,32 +60,28 @@ opkg save essentials .cursor/commands/essentials
 # OpenPackage CLI automatically generates/syncs the same command files across all platforms.
 
 # Before save:
-# .cursor/commands/essentials/clean-code.md
+# .cursor/commands/essentials/cleanup.md
 
 # After save:
-# .cursor/commands/essentials/clean-code.md
-# .claude/commands/essentials/clean-code.md
-# .opencode/command/essentials/clean-code.md
+# .cursor/commands/essentials/cleanup.md
+# .claude/commands/essentials/cleanup.md
+# .opencode/command/essentials/cleanup.md
 ```  
 
 ### Modular management of files
 Create domain specific packages for modular reuse.
 ```bash title="Terminal"
 # Create typescript package
-opkg add typescript .cursor/rules/typescript
-opkg save typescript
+opkg save typescript .cursor/rules/typescript
 
 # Create scalable-nextjs package
-opkg add scalable-nextjs .cursor/rules/nextjs
-opkg save scalable-nextjs
+opkg save scalable-nextjs .cursor/rules/nextjs
 
 # Create scalable-nestjs package
-opkg add scalable-nestjs .cursor/rules/nestjs
-opkg save scalable-nestjs
+opkg save scalable-nestjs .cursor/rules/nestjs
 
 # Create mongodb package
-opkg add mongodb .cursor/rules/mongodb
-opkg save mongodb
+opkg save mongodb .cursor/rules/mongodb
 
 # In your NextJS codebase
 opkg install typescript
@@ -92,9 +98,17 @@ opkg install mongodb
 > [!TIP]  
 > We highly recommend reading [the packages doc](https://openpackage.dev/docs/packages) to understand how packages work.
 
+### Save a file
+
+```bash title="Terminal"
+opkg save <package> <path-to-dir-or-file>
+```  
+Adds the file to the specified package and saves to local registry for reuse and sharing.
+
 ### Create a package
 
-#### In a project/workspace
+#### In a project/workspace 
+
 ```bash title="Terminal"
 opkg init <package>
 ```  
@@ -149,6 +163,12 @@ opkg uninstall <package>
 ```  
 Use the uninstall command to remove all files for the specified package from the codebase at cwd.
 
+### Authenticate CLI
+```bash title="Terminal"
+opkg login
+```  
+Use the `login` command to authenticate the CLI for pushing packages to the [official OpenPackage registry](https://openpackage.dev).
+
 ### Push a package to remote
 ```bash title="Terminal"
 opkg push <package>
@@ -170,7 +190,7 @@ Packages are composed using the following directory structure:
 
 ```txt title="Structure"
 <package>
-├── .openpackage
+├── .openpackage/
 │   ├── package.yml # The OpenPackage manifest, required
 │   ├── rules/
 │   │   └── # Rule files
