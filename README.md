@@ -1,26 +1,55 @@
-# OpenPackage
 
+<p align="center">
+  <a href="https://github.com/enulus/OpenPackage">
+    <picture>
+      <source srcset="assets/openpackage_ascii_dark.png" media="(prefers-color-scheme: dark)">
+      <source srcset="assets/openpackage_ascii_light.png" media="(prefers-color-scheme: light)">
+      <img src="assets/openpackage_ascii_light.png" alt="OpenPackage logo" height="64">
+    </picture>
+  </a>
+</p>
+
+<p align="center">The hub for coding agent workflows.</p>
+<p align="center">
 <a href="https://www.npmjs.com/package/opkg " target="blank">
   <img src="https://img.shields.io/npm/v/opkg?style=flat-square" alt="Npm package for OpenPackage">
 </a>
-<a href="https://discord.gg/W5H54HZ8Fm"  target="blank">
-  <img src="https://img.shields.io/badge/Discord-%235865F2.svg?&logo=discord&logoColor=white&style=flat-square" alt="OpenPackage Discord">
+<a href="./LICENSE">
+  <img alt="License: Apache-2.0" src="https://img.shields.io/github/license/enulus/openpackage?style=flat-square" />
+</a>
+<a href="https://discord.gg/W5H54HZ8Fm" target="blank">
+  <img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=flat-square" alt="OpenPackage Discord">
 </a>
 <br /><br />
+</p>
 
-OpenPackage is the package manager for AI coding.
+<p align="center">
+  Follow <a href="https://x.com/hyericlee">@hyericlee on X</a> for updates · Join the <a href="https://discord.gg/W5H54HZ8Fm">OpenPackage Discord</a> for help and questions.
+</p>
 
-Save and sync rules, slash commands, agents, and more.  
-Build reusable packages for use across multiple projects and AI coding platforms.
+# OpenPackage
 
-Learn more in the official docs: [openpackage.dev/docs](https://openpackage.dev/docs).
+**OpenPackage is the centralized hub for organizing your specs and workflows, giving you consistent context and workflows between sessions, projects, and teams.**
 
-Looking to discover, download, or publish packages?  
-Check out the official OpenPackage registry: [openpackage.dev/packages](https://openpackage.dev/packages). 
+## Why OpenPackage?
 
-> [!NOTE]  
-> For latest news and updates, follow the creator's X (Twitter) account
-> [@hyericlee](https://x.com/hyericlee)
+Modern AI coding tools are powerful, but lack organization, reusability, and efficiency.
+- Specs live in chat histories that require re-prompting.
+- Rules, commands, and subagents scattered across multiple projects.
+- Familiar workflows need to be rebuilt for each project, each AI coding tool.
+
+OpenPackage organizes your specs and AI coding configs into reusable packages that can be accessed by any session, any project, and any coding platform.
+
+## How does it work?
+
+OpenPackage is a standalone TUI and CLI tool that you and your coding agent uses to organize specs and configs with save and install/uninstall operations. **No API keys required.** 
+
+1. Compose packages with individual specs, rules, commands, subagents files etc.
+2. Install to any workspace
+3. Code
+
+
+## Usage
 
 ## Installation
 
