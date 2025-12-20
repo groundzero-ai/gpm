@@ -9,7 +9,7 @@
   </a>
 </p>
 
-<p align="center">The hub for coding agent workflows.</p>
+<p align="center">Organized agentic coding for teams.</p>
 <p align="center">
 <a href="https://www.npmjs.com/package/opkg " target="blank">
   <img src="https://img.shields.io/npm/v/opkg?style=flat-square" alt="Npm package for OpenPackage">
@@ -29,34 +29,110 @@
 
 # OpenPackage
 
-**OpenPackage is the centralized hub for organizing your specs and workflows, giving you consistent context and workflows between sessions, projects, and teams.**
+**OpenPackage is the centralized hub for organizing your specs and configs for agentic coding, giving you consistent context and workflows between sessions, projects, and teams.**
 
 ## Why OpenPackage?
 
 Modern AI coding tools are powerful, but lack organization, reusability, and efficiency.
-- Specs live in chat histories that require re-prompting.
+- Specs across individuals and codebases, diverging, unversioned, and incohesive.
 - Rules, commands, and subagents scattered across multiple projects.
-- Familiar workflows need to be rebuilt for each project, each AI coding tool.
+- Familiar workflows rebuilt for each project, incompatible between AI coding platforms.
 
 OpenPackage organizes your specs and AI coding configs into reusable packages that can be accessed by any session, any project, and any coding platform.
 
-## How does it work?
+## How it works
 
-OpenPackage is a standalone TUI and CLI tool that you and your coding agent uses to organize specs and configs with save and install/uninstall operations. **No API keys required.** 
+At it's core, OpenPackage is a lightweight CLI tool for creating versioned, AI coding platform agnostic packages, each contaning sets of specs and coding config files for simplified installs, uninstalls, and distribution.  
 
-1. Compose packages with individual specs, rules, commands, subagents files etc.
-2. Install to any workspace
-3. Code
+**No API keys required. No MCP installation.** 
 
+1. Declare a package
+2. Add specs and AI coding config files
+3. Sync to multiple codebases
 
-## Usage
+## Quick start
 
-## Installation
+### Install
 
 npm
 ```bash
 npm install -g opkg 
 ```
+
+### Create a package
+
+```bash title="Terminal"
+opkg init # Initialize the workspace as a package, or
+opkg init <package> # Initialize a package under cwd `.openpackage/packages`
+```  
+
+> [!NOTE]  
+> You can also use command `openpackage` instead of `opkg`
+
+### Add/update/remove package files
+
+Directly update the files (at cwd or in `.openpackage/packages/`) and perform `opkg save`.  
+You can also use the add command to add workspace files to a package.
+
+```bash title="Terminal"
+opkg add <package> <path-to-dir-or-file>
+```  
+
+> [!TIP]  
+> Learn how to compose packages by reading the [packages doc](https://openpackage.dev/docs/packages) from our official docs.
+
+Use `save` or `pack` to save the set of dirs and files as a package to your local registry for reuse and distribution.
+
+```bash title="Terminal"
+opkg save [package] # Prerelease/unversioned
+opkg pack [package] # Stable releases
+```  
+
+> [!TIP]  
+> Packages are saved to your local machine at `~/.openpackage/registry/`.
+
+### List local packages
+```bash title="Terminal"
+opkg list
+```  
+Shows all packages currently saved to the local registry.  
+
+### Show local package details
+```bash title="Terminal"
+opkg show <package>
+```  
+Outputs the details of the package and lists all included files.
+
+### Install packages
+```bash title="Terminal"
+opkg install <package>
+```  
+Adds all files under the specified package to the codebase at cwd.
+
+### Uninstall packages
+```bash title="Terminal"
+opkg uninstall <package>
+```  
+Removes all files for the specified package from the codebase at cwd.
+
+### Upload packages (push)
+```bash title="Terminal"
+opkg push <package>
+```  
+
+### Download packages (pull)
+```bash title="Terminal"
+opkg pull <package>
+```  
+
+### Authenticate CLI
+```bash title="Terminal"
+opkg login
+```  
+
+> [!TIP]  
+> Create an account at [openpackage.dev](https://openpackage.dev) to manage packages remotely.
+
 ## Use Cases
 
 ### Reuse files across multiple codebases
@@ -77,9 +153,6 @@ opkg save essentials
 # In another codebase
 opkg install essentials
 ```  
-
-> [!NOTE]  
-> You can also use command `openpackage` instead of `opkg`
 
 ### Sync files across multiple platforms
 Automatically sync your rules, slash commands, and more across multiple platform.
@@ -122,94 +195,6 @@ opkg install scalable-nestjs
 opkg install mongodb
 ```  
 
-## Usage
-
-> [!TIP]  
-> We highly recommend reading [the packages doc](https://openpackage.dev/docs/packages) to understand how packages work.
-
-### Save a file
-
-```bash title="Terminal"
-opkg save <package> <path-to-dir-or-file>
-```  
-Adds the file to the specified package and saves to local registry for reuse and sharing.
-
-### Create a package
-
-#### In a project/workspace 
-
-```bash title="Terminal"
-opkg init <package>
-```  
-Initializes a package at `.openpackage/packages/<package>/` and generates the package's `package.yml` manifest file. This method is ideal for creating/managing multiple packages within existing projects. 
-```bash title="Terminal"
-opkg add <package> <path-to-dir-or-file>
-```  
-Use the `add` command to add files from the workspace to a package. You can also directly create/update the package files in `.openpackage/packages/<package>/` (see Package Structure below for details).
-
-
-#### In a dedicated codebase for the package
-```bash title="Terminal"
-opkg init
-```  
-Initializes a package at cwd and generates the package's `package.yml` manifest file. Use this to dedicate the codebase to the package itself (see Package Structure below for details on structuring a package).
-
-
-### Save a package
-```bash title="Terminal"
-opkg save [package]
-```  
-Save the set of dirs and files as a package for reuse and cross-platform sync (prerelease).  
-Also performs sync of universal subdir content across detected AI coding platform dirs.
-
-### Finalize/pack a package
-```bash title="Terminal"
-opkg pack [package]
-```  
-Save the package as a stable non-prerelease version ready for push (upload).
-
-### List packages
-```bash title="Terminal"
-opkg list
-```  
-Use the list command to show all packages currently saved to the local registry.  
-
-### Show package details
-```bash title="Terminal"
-opkg show <package>
-```  
-The show command outputs the details of the package and lists all included files.
-
-### Install a package
-```bash title="Terminal"
-opkg install <package>
-```  
-Use the install command to add all files under the specified package to the codebase at cwd.
-
-### Uninstall a package
-```bash title="Terminal"
-opkg uninstall <package>
-```  
-Use the uninstall command to remove all files for the specified package from the codebase at cwd.
-
-### Authenticate CLI
-```bash title="Terminal"
-opkg login
-```  
-Use the `login` command to authenticate the CLI for pushing packages to the [official OpenPackage registry](https://openpackage.dev).
-
-### Push a package to remote
-```bash title="Terminal"
-opkg push <package>
-```  
-Use the `push` command to upload a package to the [official OpenPackage registry](https://openpackage.dev).
-
-### Pull a package from remote
-```bash title="Terminal"
-opkg pull <package>
-```  
-Use the `pull` command to download a package from the [official OpenPackage registry](https://openpackage.dev) to the local registry.
-
 > [!TIP]  
 > Learn more by heading over to the [official docs](https://openpackage.dev/docs).
 
@@ -239,17 +224,18 @@ There are two ways to compose packages:
 - In a project workspace: `opkg init <package>` will create a package in `.openpackage/packages/<packages>/`
 - In a dedicated package codebase: `opkg init` will create a package at cwd (similar to npm, pypi, etc.)
 
+> [!TIP]  
+> Learn more about packages from the [packages doc](https://openpackage.dev/docs/packages) from our official docs.
+
 ## Supported Platforms
 
 OpenPackage performs installation and platform sync of files for supported AI coding platforms outlined by the table below.  
 
-> [!NOTE]  
-> OpenPackage searches and includes markdown files under supported platform directories as well as any other workspace directories.
-
 | Platform | Directory | Root file | Rules | Commands | Agents | Skills |
 | --- | --- | --- | --- | --- | --- | --- |
+| Antigravity | .agent/ | | rules/ | workflows/ | | |
 | Augment Code | .augment/ | | rules/ | commands/ | | |
-| Claude Code | .claude/ | CLAUDE.md | | commands/ | agents/ | skills/ |
+| Claude Code | .claude/ | CLAUDE.md | rules/ | commands/ | agents/ | skills/ |
 | Codex | .codex/ | AGENTS.md | | prompts/ | | |
 | Cursor | .cursor/ | AGENTS.md | rules/ | commands/ | | |
 | Factory | .factory/ | AGENTS.md | | commands/ | droids/ | |
@@ -263,13 +249,13 @@ OpenPackage performs installation and platform sync of files for supported AI co
 
 The built-in `platforms.jsonc` defines supported platforms, but can be overridden by user configs:
 - Global: `~/.openpackage/platforms.jsonc` (`.json`)
-- Local: `<project>/.openpackage/platforms.jsonc` (`.json`)
+- Workspace: `<cwd>/.openpackage/platforms.jsonc` (`.json`)
 
 Deep-merged (local > global > built-in) for per-project customization.
 
 ## Contributing
 
-We would love your help building the future of package management for AI coding.  
+We would love your help building the future of package management for agentic coding.  
 
 Feel free to create [PRs](https://github.com/enulus/OpenPackage/pulls) and [Github issues](https://github.com/enulus/OpenPackage/issues) for:
 - Bugs
