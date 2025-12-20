@@ -2,6 +2,23 @@
   // Platform definitions for all supported AI coding platforms
   // Each platform defines its directory structure, root files, and subdirectories
 
+  "antigravity": {
+    "name": "Google Antigravity",
+    "rootDir": ".agent",
+    "subdirs": [
+      {
+        "universalDir": "rules",
+        "platformDir": "rules",
+        "exts": [".md"]
+      },
+      {
+        "universalDir": "commands",
+        "platformDir": "workflows",
+        "exts": [".md"]
+      }
+    ]
+  },
+
   "augment": {
     "name": "Augment Code",
     "rootDir": ".augment",
@@ -25,6 +42,11 @@
     "rootFile": "CLAUDE.md",
     "aliases": ["claudecode"],
     "subdirs": [
+      {
+        "universalDir": "rules",
+        "platformDir": "rules",
+        "exts": [".md"]
+      },
       {
         "universalDir": "commands",
         "platformDir": "commands",
