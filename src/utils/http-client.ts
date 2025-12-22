@@ -97,6 +97,16 @@ export class HttpClient {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
 
+      // Some registries/CDNs return a 200 with an HTML/XML/JSON error body.
+      // Fail fast with a more actionable error instead of passing junk bytes to tar.
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (contentType.startsWith('text/') || contentType.includes('application/json')) {
+        const preview = (await response.text()).slice(0, 200).replace(/\s+/g, ' ').trim();
+        throw new Error(
+          `Download did not return a tarball (content-type: ${contentType || 'unknown'}): ${preview || '(empty body)'}`
+        );
+      }
+
       const arrayBuffer = await response.arrayBuffer();
       logger.debug(`Downloaded ${arrayBuffer.byteLength} bytes`);
 

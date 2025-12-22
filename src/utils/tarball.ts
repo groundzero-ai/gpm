@@ -94,7 +94,22 @@ export async function extractPackageFromTarball(
   logger.debug(`Extracting package from tarball (${tarballBuffer.length} bytes)`);
   
   const tempDir = join(tmpdir(), `openpackage-extract-${Date.now()}`);
-  const tarballPath = join(tempDir, 'package.tar.gz');
+
+  const isGzipBuffer = (buffer: Buffer): boolean => {
+    // gzip magic header: 1f 8b
+    return buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+  };
+
+  const previewBufferAsText = (buffer: Buffer, maxBytes: number = 200): string => {
+    const slice = buffer.subarray(0, Math.min(maxBytes, buffer.length));
+    // Replace control characters to keep logs readable
+    return slice
+      .toString('utf8')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '�');
+  };
+
+  const isGzip = isGzipBuffer(tarballBuffer);
+  const tarballPath = join(tempDir, isGzip ? 'package.tar.gz' : 'package.tar');
   
   try {
     // Verify checksum if provided
@@ -142,7 +157,7 @@ export async function extractPackageFromTarball(
     await extractFiles(tempDir);
     
     // Remove the tarball file itself from the list
-    const filteredFiles = files.filter(f => f.path !== 'package.tar.gz');
+    const filteredFiles = files.filter(f => f.path !== 'package.tar.gz' && f.path !== 'package.tar');
     
     logger.debug(`Extracted ${filteredFiles.length} files from tarball`);
     
@@ -151,8 +166,22 @@ export async function extractPackageFromTarball(
       checksum: actualChecksum
     };
   } catch (error) {
-    logger.error('Failed to extract tarball', { error });
-    throw new ValidationError(`Failed to extract tarball: ${error}`);
+    const hint = (() => {
+      // If we didn't get gzip bytes, the first bytes are often informative (JSON/XML)
+      if (isGzip) {
+        return undefined;
+      }
+      const preview = previewBufferAsText(tarballBuffer);
+      const trimmed = preview.trimStart();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('<')) {
+        return `Downloaded payload does not look like a tarball (starts with: '${trimmed.slice(0, 60)}')`;
+      }
+      return `Downloaded payload does not look gzip-compressed (first bytes: '${preview.slice(0, 60)}')`;
+    })();
+
+    logger.error('Failed to extract tarball', { error, isGzip, hint });
+    const baseMessage = error instanceof Error ? error.message : String(error);
+    throw new ValidationError(hint ? `${baseMessage}. ${hint}` : `Failed to extract tarball: ${baseMessage}`);
   } finally {
     // Clean up temp files
     try {
