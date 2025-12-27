@@ -77,10 +77,13 @@ The index is updated differently depending on the operation:
 | Operation | Behavior |
 |-----------|----------|
 | **Add** | Records only the source path that was used to add the file. If you add `.cursor/commands/test.md`, only that path is recorded. |
-| **Save/Sync** | Expands the index to include all platform paths where files were actually created during sync. |
+| **Save** | Writes a registry snapshot; index expansion requires apply (via `save --apply` or separate `apply`). |
+| **Apply** | Expands the index to include all platform paths where files were actually created during apply. |
 | **Install** | Populates the index with all platform paths where files were installed. |
 
 This ensures the index reflects the **current state** of the workspace, not hypothetical future states.
+
+See `../apply/index-effects.md` for concrete before/after examples.
 
 ---
 
@@ -108,53 +111,6 @@ For **nested packages**, all mappings are included because:
 
 ---
 
-#### Complete Examples
-
-**After `opkg add .cursor/commands/test.md`** (only source path recorded):
-
-```yaml
-workspace:
-  hash: abc123
-  version: 1.0.0-abc123.xyz
-files:
-  .openpackage/commands/test.md:
-    - .cursor/commands/test.md    # Only the source path that exists
-```
-
-**After `opkg save`** (all synced paths recorded):
-
-```yaml
-workspace:
-  hash: abc123
-  version: 1.0.0-abc123.xyz
-files:
-  .openpackage/commands/test.md:
-    - .cursor/commands/test.md    # Original source
-    - .opencode/command/test.md   # Synced by save
-  .openpackage/rules/auth.md:
-    - .cursor/rules/auth.mdc
-  # Note: package.yml is NOT included (it's the manifest, not synced content)
-  # Note: <dir>/helper.md is SKIPPED for root packages (maps to itself)
-```
-
-**Nested package** (`cwd/.openpackage/packages/foo/.openpackage/package.index.yml`):
-
-```yaml
-workspace:
-  hash: abc123
-  version: 1.0.0
-files:
-  .openpackage/commands/test.md:
-    - .cursor/commands/test.md
-    - .opencode/command/test.md
-  <dir>/helper.md:
-    - <dir>/helper.md
-  AGENTS.md:
-    - AGENTS.md
-```
-
----
-
 #### Add Command Examples
 
 When adding files, the index only records the **source path that exists**:
@@ -166,6 +122,6 @@ When adding files, the index only records the **source path that exists**:
 | `opkg add <dir>/foo.md` | Root | `.openpackage/<dir>/foo.md` | `<dir>/foo.md` | SKIPPED |
 | `opkg add .cursor/test/foo.md` | Root | `.openpackage/test/foo.md` | `.openpackage/test/foo.md` | `.cursor/test/foo.md` (only source) |
 
-> **Note**: After `opkg save`, the index will expand to include other platform paths (e.g., `.opencode/test/foo.md`) once those files are actually synced.
+> **Note**: The index expands to include other platform paths (e.g., `.opencode/test/foo.md`) only after an apply/sync step runs (e.g., `opkg apply` or `opkg save --apply`). See `../apply/index-effects.md`.
 
 

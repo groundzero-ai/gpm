@@ -13,7 +13,7 @@ import { savePackageToRegistry } from './package-saver.js';
 import { isUnversionedVersion, packageVersionExists } from '../../utils/package-versioning.js';
 import { deleteWorkspaceWipCopies } from './workspace-wip-cleanup.js';
 import { writePackageYml } from '../../utils/package-yml.js';
-import { formatRegistryPathForDisplay } from '../../utils/registry-paths.js';
+import { printPlatformSyncSummary } from '../sync/platform-sync-summary.js';
 import { resolveWorkspaceNames, SaveMode } from './name-resolution.js';
 import { resolvePackageFilesWithConflicts } from './save-conflict-resolution.js';
 import { 
@@ -32,12 +32,13 @@ export interface SavePipelineOptions {
   mode: SaveMode;
   force?: boolean;
   rename?: string;
+  apply?: boolean;
 }
 
 export interface SavePipelineResult {
   config: { name: string; version: string };
   packageFiles: PackageFile[];
-  syncResult: PlatformSyncResult;
+  syncResult?: PlatformSyncResult;
 }
 
 export async function runSavePipeline(
@@ -45,7 +46,7 @@ export async function runSavePipeline(
   options: SavePipelineOptions
 ): Promise<CommandResult<SavePipelineResult | { packageFiles: PackageFile[] }>> {
   const cwd = process.cwd();
-  const { mode, force, rename } = options;
+  const { mode, force, rename, apply = false } = options;
   const { op, opCap } = MODE_LABELS[mode];
 
   // Use unified detection
@@ -168,18 +169,22 @@ export async function runSavePipeline(
     mode === 'wip' ? { keepVersion: targetVersion } : undefined
   );
 
-  const syncResult = await performPlatformSync(
-    cwd,
-    effectiveConfig.name,
-    effectiveConfig.version,
-    packageFiles,
-    {
-      force,
-      conflictStrategy: force ? 'overwrite' : 'ask',
-      skipRootSync: packageContext.location === 'root',
-      packageLocation: packageContext.location
-    }
-  );
+  let syncResult: PlatformSyncResult | undefined;
+
+  if (apply) {
+    syncResult = await performPlatformSync(
+      cwd,
+      effectiveConfig.name,
+      effectiveConfig.version,
+      packageFiles,
+      {
+        force,
+        conflictStrategy: force ? 'overwrite' : 'ask',
+        skipRootSync: packageContext.location === 'root',
+        packageLocation: packageContext.location
+      }
+    );
+  }
 
   if (packageContext.location !== 'root') {
     // Skip saving path-based dependencies - they're linked, not copied
@@ -219,39 +224,19 @@ export async function runSavePipeline(
     });
   }
 
-  printSummary(packageContext, effectiveConfig.version, packageFiles, syncResult);
+  printPlatformSyncSummary({
+    actionLabel: LOG_PREFIXES.SAVED.replace(/^✓\s*/, ''),
+    packageContext,
+    version: effectiveConfig.version,
+    packageFiles,
+    syncResult: apply ? syncResult : undefined,
+    noSyncHint: apply
+      ? undefined
+      : 'ℹ️  Apply skipped. Run `opkg apply` or `opkg save --apply` to sync platforms.'
+  });
 
   return {
     success: true,
     data: { config: effectiveConfig, packageFiles, syncResult }
   };
 }
-
-function printSummary(
-  packageContext: PackageContext,
-  version: string,
-  packageFiles: PackageFile[],
-  syncResult: PlatformSyncResult
-): void {
-  const name = packageContext.config.name;
-  const type = packageContext.location === 'root' ? 'root package' : 'package';
-
-  console.log(`${LOG_PREFIXES.SAVED} ${name}@${version} (${type}, ${packageFiles.length} files):`);
-
-  if (packageFiles.length > 0) {
-    for (const path of [...packageFiles.map(f => f.path)].sort()) {
-      console.log(`   ├── ${formatRegistryPathForDisplay(path)}`);
-    }
-  }
-
-  const printList = (label: string, files: string[]) => {
-    if (files.length === 0) return;
-    console.log(`✓ Platform sync ${label} ${files.length} files:`);
-    for (const f of [...files].sort()) console.log(`   ├── ${f}`);
-  };
-
-  printList('created', syncResult.created);
-  printList('updated', syncResult.updated);
-  printList('removed', syncResult.deleted ?? []);
-}
-

@@ -15,7 +15,7 @@ Both commands:
 - Select the set of files that belong to the package.
 - Copy those files into the local registry.
 - Clean up outdated WIP copies for the current workspace.
-- Sync files to platform‑specific layouts (platform sync).
+- Optionally apply/sync files to platform‑specific layouts (see `opkg apply`, or `opkg save --apply`).
 
 Versioning details are defined in `../save-pack-versioning.md`.
 
@@ -52,4 +52,5 @@ The pipeline runs in one of two **modes**:
   - In stable mode: allows overwriting existing stable registry entries.
 - **`rename <newName>`** – optional new package name to apply during this pipeline run.
 - **`platform-specific` (save only, when path is provided)** – forwarded to the add stage to generate platform-scoped variants for platform subdirectories.
+- **`apply` (save only)** – when set, runs the platform apply/sync step after the registry write completes.
 

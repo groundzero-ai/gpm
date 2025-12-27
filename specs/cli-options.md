@@ -40,3 +40,12 @@ This enables monorepo workflows without `cd` (e.g., `opkg install --cwd ./packag
 - Validation fails prevent ops (safety).
 
 Cross-refs: [install-behavior.md] (installs to effective cwd), [save-modes-inputs.md] (saves from effective cwd), [package-root-layout.md] (root = effective cwd).
+
+---
+
+## Command Notes (selected)
+
+This document primarily defines global flags, but some global-option-sensitive behavior is worth calling out:
+
+- **`opkg save` / `opkg pack`**: write a snapshot to the local registry from the effective cwd. Platform apply/sync is **opt-in** via `opkg save --apply` or `opkg apply`.
+- **`opkg apply`**: applies/syncs the current/root package to detected platforms from the effective cwd. Supports `--dry-run` and `--force`.

@@ -1,8 +1,8 @@
-### Save Pipeline – Registry Writes and Platform Sync
+### Save Pipeline – Registry Writes and WIP Cleanup
 
 #### 1. Overview
 
-This document covers the final stages of the save pipeline: version/index handling, registry writes, WIP cleanup, and platform sync.
+This document covers the final stages of the save pipeline: version/index handling, registry writes, and WIP cleanup.
 
 ---
 
@@ -75,52 +75,11 @@ These steps ensure that:
 
 ---
 
-#### 6. Platform Sync
+#### 6. Platform Apply/Sync (optional)
 
-After the registry copy succeeds, the pipeline performs a **platform sync** pass.
+Save may optionally run apply/sync after writing to the registry via `opkg save --apply`.
 
-##### Purpose
+The apply/sync specification (behavior, conflicts, index updates) lives under:
 
-- Applies platform mapping rules to mirror the package's contents into platform‑specific workspaces and files (e.g. editor/IDE integrations, AI platforms, etc.).
-- Updates `package.index.yml` to reflect the **actual installed paths** after sync.
-
-##### Operations
-
-Distinguishes between:
-
-- Content that should be created or updated on platforms.
-- Content that should be removed when no longer present in the package.
-
-##### Index Updates
-
-After sync completes:
-
-- The `package.index.yml` is updated to include **all platform paths where files were actually created**.
-- This differs from the `add` command, which only records the source path.
-- Example: If a file was added from `.cursor/commands/test.md`, after sync the index will also include `.opencode/command/test.md` (if that platform is detected and the file was synced).
-
----
-
-#### 7. Root Package Considerations
-
-Special behavior for the **root package**:
-
-- When operating on the root package (the current directory as the package), the pipeline can explicitly **skip root‑level platform sync** steps where appropriate (for example, to avoid syncing global root files back into themselves).
-- Nested packages always participate fully in platform sync; their changes are projected out to supported platforms.
-
----
-
-#### 8. Platform Sync Timing
-
-The platform sync step is invoked only after:
-
-- Package detection and naming/renaming are complete.
-- Version and file selection have succeeded.
-- Registry copy has completed without errors.
-
----
-
-#### 9. Error Reporting
-
-Any failures in platform sync are surfaced to the user as part of the save/pack result, with a summary of created, updated, and removed files per platform.
+- `../apply/README.md`
 

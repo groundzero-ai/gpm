@@ -18,7 +18,7 @@ The save pipeline executes in this order:
 4. **File Discovery** → Discover candidate files from local and workspace
 5. **Conflict Resolution** → Decide which content wins for each path
 6. **Frontmatter & Overrides** → Handle markdown metadata and platform overrides
-7. **Registry & Sync** → Write to registry, cleanup, and sync to platforms
+7. **Registry & Apply** → Write to registry, cleanup, and optionally apply/sync to platforms
 
 ---
 
@@ -32,7 +32,7 @@ The save pipeline executes in this order:
 | `save-file-discovery.md` | Candidate sources, first vs subsequent saves, grouping |
 | `save-conflict-resolution.md` | Conflict resolution rules and platform-specific selection |
 | `save-frontmatter-overrides.md` | Markdown frontmatter extraction and YAML overrides |
-| `save-registry-sync.md` | Registry writes, WIP cleanup, and platform sync |
+| `save-registry-sync.md` | Registry writes and WIP cleanup (see `../apply/` for apply/sync behavior) |
 
 ---
 

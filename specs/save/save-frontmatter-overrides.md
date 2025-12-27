@@ -77,5 +77,5 @@ After all conflicts and frontmatter merges are resolved, the pipeline reads the 
 The resulting list of files, with paths relative to the package directory, is what gets:
 
 - Copied into the local registry under the computed version.
-- Used to drive platform sync and any subsequent operations in the save pipeline.
+- Used to drive optional platform apply/sync and any subsequent operations in the save pipeline.
 

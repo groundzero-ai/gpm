@@ -1,7 +1,7 @@
 I would like to split the `save` command into two separate commands: `save` and `pack`, **but both should use the same “full copy into local registry” model** (no special link-only WIP layout).
 
 For `save` command:
-- Perform platform sync (same as current `save`).
+- Do not apply/sync platforms by default. Use `opkg apply` or `opkg save --apply` when you want platform apply/sync.
 - Compute the next WIP version (see `save-pack-versioning.md`).
 - **Copy the entire package** from `.openpackage/packages/<pkg>` into the local registry under the computed WIP version (same copy logic as existing `save --stable` / `pack`).
 - On each save, remove older WIP versions for the same workspace (per `workspaceHash`) to keep the registry clean.

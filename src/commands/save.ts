@@ -30,7 +30,8 @@ async function savePackageCommand(
   return runSavePipeline(packageName, {
     mode: 'wip',
     force: options.force,
-    rename: options.rename
+    rename: options.rename,
+    apply: options.apply
   });
 }
 
@@ -51,6 +52,7 @@ export function setupSaveCommand(program: Command): void {
     .option('-f, --force', 'overwrite existing version or skip confirmations')
     .option('--rename <newName>', 'Rename package during save')
     .option('--platform-specific', 'Save platform-specific variants for platform subdir inputs')
+    .option('--apply', 'Apply/sync saved snapshot into workspace platforms after saving')
     .action(
       withErrorHandling(async (packageName: string | undefined, path: string | undefined, options?: SaveCommandOptions) => {
         const result = await savePackageCommand(packageName, path, options ?? {});
