@@ -11,12 +11,20 @@ const __dirname = dirname(__filename);
 const cliPath = path.resolve(__dirname, '../bin/openpackage');
 
 // Helper to run CLI with args, capture output/exit
-function runCli(args: string[], cwd?: string): { stdout: string; stderr: string; code: number } {
+function runCli(
+  args: string[],
+  cwd?: string,
+  envOverrides?: Record<string, string | undefined>
+): { stdout: string; stderr: string; code: number } {
   const result = spawnSync('node', [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     stdio: 'pipe',
-    env: { ...process.env, TS_NODE_TRANSPILE_ONLY: '1' } // Mimic test env if needed
+    env: {
+      ...process.env,
+      ...(envOverrides ?? {}),
+      TS_NODE_TRANSPILE_ONLY: '1'
+    } // Mimic test env if needed
   });
   return {
     stdout: result.stdout.trim(),
@@ -75,3 +83,128 @@ function runCli(args: string[], cwd?: string): { stdout: string; stderr: string;
 }
 
 console.log('All --cwd tests passed!');
+
+// Test 6: install should not scaffold empty platform subdirectories when package has no platform files
+{
+  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'opkg-home-'));
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opkg-workspace-'));
+
+  try {
+    // Create detected platform roots but no subdirs
+    await fs.mkdir(path.join(workspaceDir, '.claude'), { recursive: true });
+    await fs.mkdir(path.join(workspaceDir, '.opencode'), { recursive: true });
+
+    // Seed a minimal registry package directly under HOME to avoid prompts/pack flow
+    const pkgName = 'empty-package';
+    const version = '1.0.0';
+    const pkgRoot = path.join(
+      tempHome,
+      '.openpackage',
+      'registry',
+      pkgName,
+      version
+    );
+    await fs.mkdir(path.join(pkgRoot, '.openpackage'), { recursive: true });
+
+    await fs.writeFile(
+      path.join(pkgRoot, '.openpackage', 'package.yml'),
+      [
+        `name: ${pkgName}`,
+        `version: ${version}`,
+        `packages: []`,
+        `dev-packages: []`,
+        ``
+      ].join('\n'),
+      'utf8'
+    );
+
+    await fs.writeFile(path.join(pkgRoot, 'some-file.md'), '# hello\n', 'utf8');
+
+    const result = runCli(
+      ['install', '--local', `${pkgName}@${version}`],
+      workspaceDir,
+      { HOME: tempHome }
+    );
+    assert.strictEqual(result.code, 0, `install should succeed\nstderr: ${result.stderr}`);
+
+    // Ensure platform subdirs were NOT created (only roots existed)
+    const shouldNotExist = [
+      path.join(workspaceDir, '.claude', 'agents'),
+      path.join(workspaceDir, '.claude', 'commands'),
+      path.join(workspaceDir, '.claude', 'rules'),
+      path.join(workspaceDir, '.claude', 'skills'),
+      path.join(workspaceDir, '.opencode', 'agent'),
+      path.join(workspaceDir, '.opencode', 'command'),
+    ];
+
+    for (const p of shouldNotExist) {
+      let existsFlag = true;
+      try {
+        await fs.stat(p);
+      } catch {
+        existsFlag = false;
+      }
+      assert.equal(existsFlag, false, `should not create empty directory: ${p}`);
+    }
+  } finally {
+    await fs.rm(tempHome, { recursive: true, force: true });
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  }
+}
+
+// Test 7: apply should not scaffold empty platform subdirectories when package has no platform files
+{
+  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'opkg-home-'));
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opkg-workspace-'));
+
+  try {
+    // Create detected platform roots but no subdirs
+    await fs.mkdir(path.join(workspaceDir, '.claude'), { recursive: true });
+    await fs.mkdir(path.join(workspaceDir, '.opencode'), { recursive: true });
+
+    // Create a minimal nested package in the workspace (what apply reads)
+    const pkgName = 'empty-package';
+    const pkgRoot = path.join(workspaceDir, '.openpackage', 'packages', pkgName);
+    await fs.mkdir(path.join(pkgRoot, '.openpackage'), { recursive: true });
+
+    await fs.writeFile(
+      path.join(pkgRoot, '.openpackage', 'package.yml'),
+      [
+        `name: ${pkgName}`,
+        `version: 1.0.0`,
+        `packages: []`,
+        `dev-packages: []`,
+        ``
+      ].join('\n'),
+      'utf8'
+    );
+
+    // Include a non-platform file; apply should ignore it and still not scaffold platform dirs
+    await fs.writeFile(path.join(pkgRoot, 'some-file.md'), '# hello\n', 'utf8');
+
+    const result = runCli(['apply', pkgName], workspaceDir, { HOME: tempHome });
+    assert.strictEqual(result.code, 0, `apply should succeed\nstderr: ${result.stderr}`);
+
+    const shouldNotExist = [
+      path.join(workspaceDir, '.claude', 'agents'),
+      path.join(workspaceDir, '.claude', 'commands'),
+      path.join(workspaceDir, '.claude', 'rules'),
+      path.join(workspaceDir, '.claude', 'skills'),
+      path.join(workspaceDir, '.opencode', 'agent'),
+      path.join(workspaceDir, '.opencode', 'command'),
+    ];
+
+    for (const p of shouldNotExist) {
+      let existsFlag = true;
+      try {
+        await fs.stat(p);
+      } catch {
+        existsFlag = false;
+      }
+      assert.equal(existsFlag, false, `should not create empty directory: ${p}`);
+    }
+  } finally {
+    await fs.rm(tempHome, { recursive: true, force: true });
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  }
+}

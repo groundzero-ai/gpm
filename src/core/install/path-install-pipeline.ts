@@ -4,7 +4,6 @@ import type { PackageRemoteResolutionOutcome } from './types.js';
 import type { Platform } from '../platforms.js';
 import { displayDependencyTree } from '../dependency-resolver.js';
 import { ensureRegistryDirectories } from '../directory.js';
-import { createPlatformDirectories } from '../platforms.js';
 import {
   prepareInstallEnvironment,
   processConflictResolution,
@@ -246,7 +245,6 @@ export async function runPathInstallPipeline(
   const finalPlatforms = options.resolvedPlatforms && options.resolvedPlatforms.length > 0
     ? options.resolvedPlatforms
     : await resolvePlatforms(cwd, specifiedPlatforms, { interactive: canPromptForPlatforms });
-  const createdDirs = await createPlatformDirectories(cwd, finalPlatforms as Platform[]);
 
   // Copy source package to workspace .openpackage/packages/ for consistency
   // This allows uninstall/status to work consistently
@@ -299,7 +297,7 @@ export async function runPathInstallPipeline(
   displayInstallationResults(
     packageName,
     finalResolvedPackages,
-    { platforms: finalPlatforms, created: createdDirs },
+    { platforms: finalPlatforms, created: [] },
     options,
     mainPackage,
     installationOutcome.allAddedFiles,

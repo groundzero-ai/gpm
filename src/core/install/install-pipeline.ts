@@ -5,7 +5,6 @@ import type { Platform } from '../platforms.js';
 
 import { displayDependencyTree } from '../dependency-resolver.js';
 import { ensureRegistryDirectories } from '../directory.js';
-import { createPlatformDirectories } from '../platforms.js';
 import { determineCanonicalInstallPlan, resolvePersistRange } from './canonical-plan.js';
 import {
   prepareInstallEnvironment,
@@ -340,7 +339,6 @@ export async function runInstallPipeline(
   const finalPlatforms = options.resolvedPlatforms && options.resolvedPlatforms.length > 0
     ? options.resolvedPlatforms
     : await resolvePlatforms(cwd, specifiedPlatforms, { interactive: canPromptForPlatforms });
-  const createdDirs = await createPlatformDirectories(cwd, finalPlatforms as Platform[]);
 
   const fileFilters =
     installPaths && installPaths.length > 0 ? { [options.packageName]: installPaths } : undefined;
@@ -402,7 +400,7 @@ export async function runInstallPipeline(
   displayInstallationResults(
     options.packageName,
     finalResolvedPackages,
-    { platforms: finalPlatforms, created: createdDirs },
+    { platforms: finalPlatforms, created: [] },
     options,
     mainPackage,
     installationOutcome.allAddedFiles,

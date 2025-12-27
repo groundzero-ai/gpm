@@ -2,7 +2,7 @@ import * as semver from 'semver';
 import { InstallOptions } from '../../types/index.js';
 import { ResolvedPackage } from '../dependency-resolver.js';
 import { ensureRegistryDirectories } from '../directory.js';
-import { createPlatformDirectories, type Platform } from '../platforms.js';
+import { type Platform } from '../platforms.js';
 import { gatherGlobalVersionConstraints, gatherRootVersionConstraints } from '../openpackage.js';
 import { resolveDependencies } from '../dependency-resolver.js';
 import { PackageRemoteResolutionOutcome } from './types.js';
@@ -79,11 +79,6 @@ export async function prepareInstallEnvironment(
   await createWorkspacePackageYml(cwd);
 
   const specifiedPlatforms = normalizePlatforms(options.platforms);
-
-  if (specifiedPlatforms && specifiedPlatforms.length > 0 && !options.dryRun) {
-    const earlyPlatforms = await resolvePlatforms(cwd, specifiedPlatforms, { interactive: false });
-    await createPlatformDirectories(cwd, earlyPlatforms as Platform[]);
-  }
 
   return { specifiedPlatforms };
 }
@@ -290,5 +285,3 @@ function formatPackageLabel(packageName: string, version?: string): string {
   return version ? `${packageName}@${version}` : packageName;
 }
 
-// Import the resolvePlatforms function from the platform-resolution file
-import { resolvePlatforms } from './platform-resolution.js';
