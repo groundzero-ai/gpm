@@ -121,7 +121,7 @@ export async function runUninstallPipeline(
     return { success: false, error: `Package '${packageName}' not found in workspace index.` };
   }
 
-  const rootNames = getPlatformRootFileNames(getAllPlatforms(cwd), cwd);
+  const rootNames = getPlatformRootFileNames(getAllPlatforms(undefined, cwd), cwd);
   const plannedRemovals = await expandFilesFromIndex(cwd, pkgEntry.files || {}, rootNames);
   const rootPlan = await computeRootFileRemovalPlan(cwd, [packageName]);
 

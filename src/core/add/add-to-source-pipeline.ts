@@ -80,7 +80,7 @@ export async function runAddToSourcePipeline(
 
 function applyCopyToRootRule(entries: SourceEntry[], cwd: string): SourceEntry[] {
   const universalSubdirs = getAllUniversalSubdirs(cwd);
-  const rootFileNames = getPlatformRootFileNames(getAllPlatforms(cwd), cwd);
+  const rootFileNames = getPlatformRootFileNames(getAllPlatforms(undefined, cwd), cwd);
 
   return entries.map(entry => {
     const normalized = normalizePathForProcessing(entry.registryPath) || entry.registryPath;

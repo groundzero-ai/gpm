@@ -2,7 +2,7 @@ import { Command } from 'commander';
 
 import { CommandResult } from '../types/index.js';
 import { withErrorHandling, ValidationError } from '../utils/errors.js';
-import { runStatusPipeline } from '../core/status/status-pipeline.js';
+import { runStatusPipeline, type StatusPackageReport } from '../core/status/status-pipeline.js';
 import { logger } from '../utils/logger.js';
 
 interface CommandOptions {
@@ -10,7 +10,7 @@ interface CommandOptions {
 }
 
 function printPackageLine(
-  pkg: Awaited<ReturnType<typeof runStatusPipeline>>['data']['packages'][number],
+  pkg: StatusPackageReport,
   verbose: boolean
 ): void {
   const icon = pkg.state === 'synced' ? '✅' : pkg.state === 'missing' ? '❌' : '⚠️';

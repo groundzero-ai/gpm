@@ -99,7 +99,7 @@ async function initNestedPackage(packageName: string, force?: boolean): Promise<
     
     const packageConfig = {
       ...(await promptPackageDetailsForNamed(normalizedName)),
-      partial: true
+
     };
     
     await writePackageYml(packageYmlPath, packageConfig);

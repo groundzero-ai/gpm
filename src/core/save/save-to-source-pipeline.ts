@@ -15,7 +15,8 @@ import {
   resolveGroup,
   resolveRootGroup
 } from './save-conflict-resolver.js';
-import { SaveCandidate, SaveCandidateGroup } from './save-types.js';
+import { SaveCandidate } from './save-types.js';
+import type { SaveCandidateGroup } from './save-yml-resolution.js';
 import { createPlatformSpecificRegistryPath } from '../../utils/platform-specific-paths.js';
 import { logger } from '../../utils/logger.js';
 
@@ -81,7 +82,7 @@ async function writeCandidateToSource(
 ): Promise<void> {
   const targetPath = join(packageRoot, registryPath);
   await ensureDir(dirname(targetPath));
-  await writeTextFile(targetPath, candidate.content, candidate.encoding as BufferEncoding | undefined);
+  await writeTextFile(targetPath, candidate.content);
 }
 
 async function buildGroupsFromIndex(
