@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { runSaveToSourcePipeline } from '../../src/core/save/save-to-source-pipeline.js';
-import { runAddToSourcePipeline } from '../../src/core/add/add-to-source-pipeline.js';
-import { writeWorkspaceIndex, readWorkspaceIndex, getWorkspaceIndexPath } from '../../src/utils/workspace-index-yml.js';
+import { runSaveToSourcePipeline } from '../src/core/save/save-to-source-pipeline.js';
+import { runAddToSourcePipeline } from '../src/core/add/add-to-source-pipeline.js';
+import { writeWorkspaceIndex, readWorkspaceIndex, getWorkspaceIndexPath } from '../src/utils/workspace-index-yml.js';
 
 const UTF8 = 'utf-8';
 

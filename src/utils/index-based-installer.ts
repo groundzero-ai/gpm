@@ -147,7 +147,9 @@ async function writePackageIndex(record: PackageIndexRecord, cwd?: string): Prom
   }
 
   const wsRecord = await readWorkspaceIndex(resolvedCwd);
-  const entry = wsRecord.index.packages?.[record.packageName];
+  // Be defensive: older/invalid index files could sanitize to missing packages map.
+  wsRecord.index.packages = wsRecord.index.packages ?? {};
+  const entry = wsRecord.index.packages[record.packageName];
   const pathToUse =
     entry?.path ??
     record.path ??
@@ -164,7 +166,7 @@ async function writePackageIndex(record: PackageIndexRecord, cwd?: string): Prom
   wsRecord.index.packages[record.packageName] = {
     ...entry,
     path: pathToUse,
-    version: entry.version ?? record.workspace?.version,
+    version: entry?.version ?? record.workspace?.version,
     files: sortMapping(record.files ?? {})
   };
 

@@ -162,16 +162,23 @@ console.log('All --cwd tests passed!');
     await fs.mkdir(path.join(workspaceDir, '.claude'), { recursive: true });
     await fs.mkdir(path.join(workspaceDir, '.opencode'), { recursive: true });
 
-    // Create a minimal nested package in the workspace (what apply reads)
     const pkgName = 'empty-package';
-    const pkgRoot = path.join(workspaceDir, '.openpackage', 'packages', pkgName);
-    await fs.mkdir(path.join(pkgRoot, '.openpackage'), { recursive: true });
+    const version = '1.0.0';
 
+    // Seed a minimal registry package under HOME (source of truth)
+    const pkgRoot = path.join(
+      tempHome,
+      '.openpackage',
+      'registry',
+      pkgName,
+      version
+    );
+    await fs.mkdir(path.join(pkgRoot, '.openpackage'), { recursive: true });
     await fs.writeFile(
       path.join(pkgRoot, 'openpackage.yml'),
       [
         `name: ${pkgName}`,
-        `version: 1.0.0`,
+        `version: ${version}`,
         `packages: []`,
         `dev-packages: []`,
         ``
@@ -181,6 +188,24 @@ console.log('All --cwd tests passed!');
 
     // Include a non-platform file; apply should ignore it and still not scaffold platform dirs
     await fs.writeFile(path.join(pkgRoot, 'some-file.md'), '# hello\n', 'utf8');
+
+    // Create unified workspace index entry (strict index-driven apply)
+    const wsIndexPath = path.join(workspaceDir, '.openpackage', 'openpackage.index.yml');
+    await fs.mkdir(path.dirname(wsIndexPath), { recursive: true });
+    await fs.writeFile(
+      wsIndexPath,
+      [
+        '# This file is managed by OpenPackage. Do not edit manually.',
+        '',
+        'packages:',
+        `  ${pkgName}:`,
+        `    path: ${pkgRoot}/`,
+        `    version: ${version}`,
+        '    files: {}',
+        ''
+      ].join('\n'),
+      'utf8'
+    );
 
     const result = runCli(['apply', pkgName], workspaceDir, { HOME: tempHome });
     assert.strictEqual(result.code, 0, `apply should succeed\nstderr: ${result.stderr}`);

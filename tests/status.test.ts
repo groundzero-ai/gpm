@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 
-import { runStatusPipeline } from '../../src/core/status/status-pipeline.js';
+import { runStatusPipeline } from '../src/core/status/status-pipeline.js';
 
 async function setupWorkspace(): Promise<{ cwd: string; home: string }> {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'opkg-status-home-'));

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { readWorkspaceIndex } from '../../src/utils/workspace-index-yml.js';
+import { readWorkspaceIndex } from '../src/utils/workspace-index-yml.js';
 import { runCli } from './test-helpers.js';
 
 async function setupWorkspace(): Promise<{ cwd: string; home: string }> {

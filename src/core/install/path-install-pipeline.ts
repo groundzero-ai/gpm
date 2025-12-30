@@ -22,7 +22,6 @@ import { loadPackageFromPath } from './path-package-loader.js';
 import {
   createWorkspacePackageYml,
   addPackageToYml,
-  writeLocalPackageFromRegistry,
 } from '../../utils/package-management.js';
 import { determineResolutionMode } from './install-pipeline.js';
 
@@ -248,12 +247,12 @@ export async function runPathInstallPipeline(
     ? options.resolvedPlatforms
     : await resolvePlatforms(cwd, specifiedPlatforms, { interactive: canPromptForPlatforms });
 
-  // Copy source package to workspace .openpackage/packages/ for consistency
-  // This allows uninstall/status to work consistently
-  const { writePackageFilesToDirectory } = await import('../../utils/package-copy.js');
-  const { getLocalPackageDir } = await import('../../utils/paths.js');
-  const workspacePackageDir = getLocalPackageDir(cwd, packageName);
-  await writePackageFilesToDirectory(workspacePackageDir, sourcePackage.files);
+  // TODO: Removed manual source copy to .openpackage/packages/ as redundant with index-based install
+  // Source files handled via installPackageByIndex; index tracks mappings
+  // If local cache needed for path sources, register to registry minimally instead
+  const { getLocalPackageDir } = await import('../../utils/paths.js'); // Keep import if needed elsewhere
+  logger.debug('Skipped manual source package copy to local packages dir', { packageName, sourcePath: options.sourcePath });
+
 
   // Install to workspace platforms
   const installationOutcome = await performIndexBasedInstallationPhases({
@@ -265,15 +264,6 @@ export async function runPathInstallPipeline(
     targetDir: options.targetDir,
     fileFilters: undefined  // Full install for path-based packages
   });
-
-  // Write local package registry entries for all resolved packages
-  for (const resolved of finalResolvedPackages) {
-    if (resolved.source === 'path') {
-      // Path-based packages are already copied to workspace above
-      continue;
-    }
-    await writeLocalPackageFromRegistry(cwd, resolved.name, resolved.version);
-  }
 
   // Update workspace openpackage.yml with path-based dependency
   const mainPackage = finalResolvedPackages.find(pkg => pkg.isRoot);

@@ -3,8 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { resolvePackageSource } from '../../src/core/source-resolution/resolve-package-source.js';
-import { resolveDependencyGraph } from '../../src/core/source-resolution/dependency-graph.js';
+import { resolvePackageSource } from '../src/core/source-resolution/resolve-package-source.js';
+import { resolveDependencyGraph } from '../src/core/source-resolution/dependency-graph.js';
 
 async function setupWorkspaceWithPathDependency(): Promise<{
   workspace: string;

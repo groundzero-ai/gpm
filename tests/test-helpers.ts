@@ -4,12 +4,12 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '../..');
+const repoRoot = path.resolve(__dirname, '..');
 
 export function getCliPath(): string {
   // Use the TypeScript entrypoint so tests validate current source behavior,
   // independent of whether `dist/` is rebuilt.
-  return path.resolve(__dirname, '../../src/index.ts');
+  return path.resolve(repoRoot, 'src/index.ts');
 }
 
 export function runCli(

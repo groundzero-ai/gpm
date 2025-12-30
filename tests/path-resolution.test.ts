@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { expandTildePath, resolveDeclaredPath } from '../../src/utils/path-resolution.js';
+import { expandTildePath, resolveDeclaredPath } from '../src/utils/path-resolution.js';
 
 // expandTildePath
 assert.equal(expandTildePath('~/project', '/home/tester'), path.join('/home/tester', 'project'));

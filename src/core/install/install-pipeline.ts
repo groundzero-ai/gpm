@@ -353,14 +353,13 @@ export async function runInstallPipeline(
     fileFilters
   });
 
-  for (const resolved of finalResolvedPackages) {
-    const partialPaths = fileFilters?.[resolved.name];
-    if (partialPaths && partialPaths.length > 0) {
-      await writePartialLocalPackageFromRegistry(cwd, resolved.name, resolved.version, partialPaths);
-      continue;
-    }
-    await writeLocalPackageFromRegistry(cwd, resolved.name, resolved.version);
-  }
+  // TODO: Removed full/partial local package copies as they are redundant with index-based install
+  // Future: If caching needed for non-registry sources, implement minimal/partial only via index refs
+  logger.debug('Skipped local package directory copies for resolved packages', {
+    packageCount: finalResolvedPackages.length,
+    hasFileFilters: !!fileFilters
+  });
+
 
   const mainPackage = finalResolvedPackages.find(pkg => pkg.isRoot);
   if (packageYmlExists && mainPackage) {

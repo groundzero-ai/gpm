@@ -1,4 +1,4 @@
-import { dirname, join } from 'path';
+import { dirname, join, sep } from 'path';
 
 import type { CommandResult, PackageFile, InstallOptions } from '../../types/index.js';
 import { DEPENDENCY_ARRAYS, UNVERSIONED } from '../../constants/index.js';
@@ -6,9 +6,7 @@ import { applyPlannedSyncForPackageFiles } from '../../utils/index-based-install
 import { readPackageFilesForRegistry } from '../../utils/package-copy.js';
 import { PACKAGE_PATHS } from '../../constants/index.js';
 import { printPlatformSyncSummary } from '../sync/platform-sync-summary.js';
-import { resolvePackageSource } from '../source-resolution/resolve-package-source.js';
-import { getLocalPackageYmlPath } from '../../utils/paths.js';
-import { parsePackageYml } from '../../utils/package-yml.js';
+import { getLocalOpenPackageDir } from '../../utils/paths.js';
 import { getDetectedPlatforms } from '../platforms.js';
 import { readWorkspaceIndex, writeWorkspaceIndex } from '../../utils/workspace-index-yml.js';
 import { stripRootCopyPrefix, isRootCopyPath } from '../../utils/platform-root-files.js';
@@ -16,6 +14,9 @@ import { ensureDir, writeTextFile } from '../../utils/fs.js';
 import { syncRootFiles } from '../sync/root-files-sync.js';
 import { normalizePathForProcessing } from '../../utils/path-normalization.js';
 import { PlatformSyncResult } from '../sync/platform-sync.js';
+import { resolveDeclaredPath } from '../../utils/path-resolution.js';
+import { isRegistryPath } from '../../utils/source-mutability.js';
+import { MUTABILITY, SOURCE_TYPES } from '../../constants/index.js';
 
 export interface ApplyPipelineOptions extends InstallOptions {}
 
@@ -30,13 +31,17 @@ export async function runApplyPipeline(
   options: ApplyPipelineOptions = {}
 ): Promise<CommandResult<ApplyPipelineResult>> {
   const cwd = process.cwd();
+  const { index } = await readWorkspaceIndex(cwd);
   const targets =
-    packageName !== undefined
-      ? [packageName]
-      : await collectDeclaredPackageNames(cwd);
+    packageName !== undefined ? [packageName] : Object.keys(index.packages ?? {}).sort();
 
   if (targets.length === 0) {
-    return { success: false, error: 'No packages declared in .openpackage/openpackage.yml' };
+    return {
+      success: false,
+      error:
+        `No packages found in .openpackage/openpackage.index.yml. ` +
+        `Run 'opkg install ...' first to populate the unified workspace index.`
+    };
   }
 
   const results: ApplyPipelineResult[] = [];
@@ -55,27 +60,36 @@ export async function runApplyPipeline(
   };
 }
 
-async function collectDeclaredPackageNames(cwd: string): Promise<string[]> {
-  const manifestPath = getLocalPackageYmlPath(cwd);
-  const manifest = await parsePackageYml(manifestPath);
-  const names = new Set<string>();
-  const append = (arr: any[] | undefined) => {
-    if (!arr) return;
-    for (const dep of arr) {
-      if (dep?.name) names.add(dep.name);
-    }
-  };
-  append(manifest[DEPENDENCY_ARRAYS.PACKAGES]);
-  append(manifest[DEPENDENCY_ARRAYS.DEV_PACKAGES]);
-  return Array.from(names);
-}
-
 async function applySinglePackage(
   cwd: string,
   packageName: string,
   options: ApplyPipelineOptions
 ): Promise<CommandResult<ApplyPipelineResult>> {
-  const source = await resolvePackageSource(cwd, packageName);
+  const { index } = await readWorkspaceIndex(cwd);
+  const entry = index.packages?.[packageName];
+  if (!entry?.path) {
+    return {
+      success: false,
+      error:
+        `No entry for '${packageName}' found in .openpackage/openpackage.index.yml. ` +
+        `Run 'opkg install ...' first to populate the unified workspace index.`
+    };
+  }
+
+  const baseDir = getLocalOpenPackageDir(cwd);
+  const resolved = resolveDeclaredPath(entry.path, baseDir);
+  const absolutePath = join(resolved.absolute, sep);
+  const mutability = isRegistryPath(absolutePath) ? MUTABILITY.IMMUTABLE : MUTABILITY.MUTABLE;
+  const sourceType = isRegistryPath(absolutePath) ? SOURCE_TYPES.REGISTRY : SOURCE_TYPES.PATH;
+
+  const source = {
+    packageName,
+    absolutePath,
+    declaredPath: resolved.declared,
+    mutability,
+    version: entry.version,
+    sourceType
+  };
   const packageFiles = (await readPackageFilesForRegistry(source.absolutePath)).filter(
     file => file.path !== PACKAGE_PATHS.INDEX_RELATIVE
   );
