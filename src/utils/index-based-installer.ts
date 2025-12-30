@@ -1,4 +1,5 @@
 import { dirname, join, relative, parse as parsePath, sep } from 'path';
+import path from 'path';
 import { promises as fs } from 'fs';
 
 import {
@@ -51,6 +52,7 @@ import {
   buildWorkspaceOwnershipContext,
   type WorkspaceConflictOwner
 } from './workspace-index-ownership.js';
+import { resolvePackageContentRoot } from '../core/install/local-source-resolution.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -164,9 +166,34 @@ async function writePackageIndex(record: PackageIndexRecord, cwd?: string): Prom
     return;
   }
 
-  // Convert absolute paths under ~/.openpackage/ to tilde notation
-  // (handles both ~/.openpackage/registry/ and ~/.openpackage/packages/)
-  const pathToUse = toTildePath(rawPath);
+  const toWorkspaceRelativePath = (absolutePath: string, workspaceRoot: string): string => {
+    if (!path.isAbsolute(absolutePath)) {
+      return absolutePath;
+    }
+
+    const hasTrailingSlash = absolutePath.endsWith(path.sep) || absolutePath.endsWith('/');
+    const pathWithoutTrailing = hasTrailingSlash ? absolutePath.slice(0, -1) : absolutePath;
+
+    const normalizedAbs = path.normalize(pathWithoutTrailing);
+    const normalizedRoot = path.normalize(workspaceRoot);
+
+    if (
+      normalizedAbs === normalizedRoot ||
+      normalizedAbs.startsWith(normalizedRoot + path.sep)
+    ) {
+      const rel = path.relative(normalizedRoot, normalizedAbs);
+      const normalizedRel = rel.split(path.sep).join('/');
+      const result = normalizedRel ? `./${normalizedRel}` : './';
+      return hasTrailingSlash ? result + '/' : result;
+    }
+
+    return absolutePath;
+  };
+
+  // Prefer workspace-relative paths when the source lives under the workspace root.
+  // Otherwise, convert absolute paths under ~/.openpackage/ to tilde notation.
+  const workspaceRelativeOrAbsolute = toWorkspaceRelativePath(rawPath, resolvedCwd);
+  const pathToUse = toTildePath(workspaceRelativeOrAbsolute);
 
   wsRecord.index.packages[record.packageName] = {
     ...entry,
@@ -188,7 +215,7 @@ export async function planConflictsForPackage(
   version: string,
   platforms: Platform[]
 ): Promise<PlannedConflict[]> {
-  const registryEntries = await loadRegistryFileEntries(packageName, version);
+  const registryEntries = await loadRegistryFileEntries(packageName, version, { cwd });
   const plannedFiles = createPlannedFiles(registryEntries);
   attachTargetsToPlannedFiles(cwd, plannedFiles, platforms);
 
@@ -595,9 +622,19 @@ async function buildExpandedIndexesContext(
 
 async function loadRegistryFileEntries(
   packageName: string,
-  version: string
+  version: string,
+  opts?: { cwd?: string; contentRoot?: string }
 ): Promise<RegistryFileEntry[]> {
-  const pkg = await packageManager.loadPackage(packageName, version);
+  const packageRootDir =
+    opts?.contentRoot && (await exists(opts.contentRoot))
+      ? opts.contentRoot
+      : opts?.cwd
+        ? await resolvePackageContentRoot({ cwd: opts.cwd, packageName, version })
+        : undefined;
+
+  const pkg = await packageManager.loadPackage(packageName, version, {
+    packageRootDir
+  });
   const entries: RegistryFileEntry[] = [];
 
   for (const file of pkg.files) {
@@ -944,7 +981,11 @@ export async function installPackageByIndex(
   options: InstallOptions,
   includePaths?: string[]
 ): Promise<IndexInstallResult> {
-  const registryEntries = await loadRegistryFileEntries(packageName, version);
+  const contentRoot = await resolvePackageContentRoot({ cwd, packageName, version });
+  const registryEntries = await loadRegistryFileEntries(packageName, version, {
+    cwd,
+    contentRoot
+  });
 
   const normalizedIncludes = includePaths && includePaths.length > 0
     ? new Set(includePaths.map(p => normalizeRegistryPath(p)))
@@ -1002,7 +1043,7 @@ export async function installPackageByIndex(
   if (!options.dryRun) {
     const mapping = buildIndexMappingFromPlans(groupPlans);
     const indexRecord: PackageIndexRecord = {
-      path: join(getRegistryDirectories().packages, packageName, version, sep),
+      path: contentRoot ?? join(getRegistryDirectories().packages, packageName, version, sep),
       packageName,
       workspace: {
         version

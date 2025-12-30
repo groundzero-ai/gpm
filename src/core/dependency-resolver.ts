@@ -17,6 +17,12 @@ import { PACKAGE_PATHS } from '../constants/index.js';
 import { formatVersionLabel } from '../utils/package-versioning.js';
 import { loadPackageFromPath } from './install/path-package-loader.js';
 import { loadPackageFromGit } from './install/git-package-loader.js';
+import {
+  resolveCandidateVersionsForInstall,
+  type CandidateVersionsResult,
+  maybeWarnHigherRegistryVersion,
+  resolvePackageContentRoot
+} from './install/local-source-resolution.js';
 
 /**
  * Resolved package interface for dependency resolution
@@ -178,7 +184,29 @@ export async function resolveDependencies(
     });
   };
 
-  const localVersions = await listPackageVersions(packageName);
+  const localSources: CandidateVersionsResult = await resolveCandidateVersionsForInstall({
+    cwd: targetDir,
+    packageName,
+    mode: resolutionMode
+  });
+
+  const mutableSourceVersion =
+    localSources.sourceKind === 'workspaceMutable' || localSources.sourceKind === 'globalMutable'
+      ? localSources.localVersions[0]
+      : null;
+  if (mutableSourceVersion && constraintRanges.length > 0) {
+    const satisfies = constraintRanges.every(range =>
+      semver.satisfies(mutableSourceVersion, range, { includePrerelease: true })
+    );
+    if (!satisfies) {
+      throw new VersionConflictError(packageName, {
+        ranges: constraintRanges,
+        availableVersions: [mutableSourceVersion]
+      });
+    }
+  }
+
+  const localVersions = localSources.localVersions;
   const explicitPrereleaseIntent = allRanges.some(range => hasExplicitPrereleaseIntent(range));
 
   let selectionResult;
@@ -256,19 +284,38 @@ export async function resolveDependencies(
   logger.debug(
     `Resolved constraints [${allRanges.join(', ')}] to '${resolvedVersion}' for package '${packageName}'`
   );
+
+  const higherLocalWarning = await maybeWarnHigherRegistryVersion({
+    packageName,
+    selectedVersion: resolvedVersion
+  });
+  if (higherLocalWarning) {
+    logger.warn(`⚠️  ${higherLocalWarning}`);
+    if (resolverOptions.onWarning) {
+      resolverOptions.onWarning(`⚠️  ${higherLocalWarning}`);
+    }
+  }
+
   if (!hasConstraints) {
     versionRange = undefined;
   }
 
   // 3. Attempt to repair dependency from local registry
   let pkg: Package;
+  const contentRoot =
+    localSources.contentRoot ??
+    (await resolvePackageContentRoot({
+      cwd: targetDir,
+      packageName,
+      version: resolvedVersion
+    }));
   try {
     // Load package with resolved version
     logger.debug(`Attempting to load package '${packageName}' from local registry`, {
       version: resolvedVersion,
       originalRange: versionRange
     });
-    pkg = await packageManager.loadPackage(packageName, resolvedVersion);
+    pkg = await packageManager.loadPackage(packageName, resolvedVersion, { packageRootDir: contentRoot });
     logger.debug(`Successfully loaded package '${packageName}' from local registry`, {
       version: pkg.metadata.version
     });
@@ -325,7 +372,9 @@ export async function resolveDependencies(
           // Try to reload the package metadata using resolved version (or original version if not resolved)
           const metadata = await registryManager.getPackageMetadata(packageName, resolvedVersion || version);
           // Attempt to load again with the resolved version - this might succeed if it was a temporary issue
-          pkg = await packageManager.loadPackage(packageName, resolvedVersion || version);
+          pkg = await packageManager.loadPackage(packageName, resolvedVersion || version, {
+            packageRootDir: contentRoot
+          });
           logger.info(`Successfully repaired and loaded package '${packageName}'`);
         } else {
           // Package truly doesn't exist - treat as missing dependency

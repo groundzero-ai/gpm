@@ -48,14 +48,20 @@ export class PackageManager {
   /**
    * Load a package from the registry (latest version by default)
    */
-  async loadPackage(packageName: string, version?: string): Promise<Package> {
+  async loadPackage(
+    packageName: string,
+    version?: string,
+    opts?: { packageRootDir?: string }
+  ): Promise<Package> {
     logger.debug(`Loading package: ${packageName}`, { version });
     
     validatePackageName(packageName);
     
-    let targetVersion: string | null;
+    let targetVersion: string | null = opts?.packageRootDir ? version ?? null : null;
     
-    if (version === UNVERSIONED) {
+    if (opts?.packageRootDir) {
+      // Use provided root; version comes from manifest.
+    } else if (version === UNVERSIONED) {
       targetVersion = UNVERSIONED;
     } else if (version) {
       // Check if it's a version range or exact version
@@ -81,11 +87,13 @@ export class PackageManager {
       targetVersion = await getLatestPackageVersion(packageName);
     }
     
-    if (!targetVersion) {
+    if (!targetVersion && !opts?.packageRootDir) {
       throw new PackageNotFoundError(packageName);
     }
     
-    const packagePath = getPackageVersionPath(packageName, targetVersion);
+    const packagePath = opts?.packageRootDir
+      ? opts.packageRootDir
+      : getPackageVersionPath(packageName, targetVersion ?? undefined);
     if (!(await exists(packagePath))) {
       throw new PackageNotFoundError(packageName);
     }

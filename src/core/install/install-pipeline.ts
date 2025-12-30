@@ -3,6 +3,7 @@ import type { ResolvedPackage } from '../dependency-resolver.js';
 import type { PackageRemoteResolutionOutcome, InstallResolutionMode } from './types.js';
 import type { Platform } from '../platforms.js';
 
+import semver from 'semver';
 import { displayDependencyTree } from '../dependency-resolver.js';
 import { ensureRegistryDirectories } from '../directory.js';
 import { determineCanonicalInstallPlan, resolvePersistRange } from './canonical-plan.js';
@@ -29,9 +30,13 @@ import { resolvePlatforms } from './platform-resolution.js';
 import { getLocalPackageYmlPath, getInstallRootDir, isRootPackage } from '../../utils/paths.js';
 import { exists } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
-import { PackageNotFoundError } from '../../utils/errors.js';
+import { PackageNotFoundError, VersionConflictError } from '../../utils/errors.js';
 import { safePrompts } from '../../utils/prompts.js';
 import { normalizeRegistryPath } from '../../utils/registry-entry-filter.js';
+import {
+  resolveCandidateVersionsForInstall,
+  maybeWarnHigherRegistryVersion
+} from './local-source-resolution.js';
 
 export interface InstallPipelineOptions extends InstallOptions {
   packageName: string;
@@ -175,6 +180,28 @@ export async function runInstallPipeline(
     canPrompt: Boolean(process.stdin.isTTY && process.stdout.isTTY)
   });
 
+  const localSources = await resolveCandidateVersionsForInstall({
+    cwd,
+    packageName: options.packageName,
+    mode: resolutionMode
+  });
+
+  const mutableSourceVersion =
+    localSources.sourceKind === 'workspaceMutable' || localSources.sourceKind === 'globalMutable'
+      ? localSources.localVersions[0]
+      : null;
+
+  if (mutableSourceVersion && canonicalPlan.effectiveRange && canonicalPlan.effectiveRange.trim()) {
+    const range = canonicalPlan.effectiveRange.trim();
+    const isWildcard = range === '*' || range.toLowerCase() === 'latest';
+    if (!isWildcard && !semver.satisfies(mutableSourceVersion, range, { includePrerelease: true })) {
+      throw new VersionConflictError(options.packageName, {
+        ranges: [range],
+        availableVersions: [mutableSourceVersion]
+      });
+    }
+  }
+
   const selectionOptions = options.stable ? { preferStable: true } : undefined;
   const preselection = await selectInstallVersionUnified({
     packageName: options.packageName,
@@ -182,7 +209,8 @@ export async function runInstallPipeline(
     mode: resolutionMode,
     selectionOptions,
     profile: options.profile,
-    apiKey: options.apiKey
+    apiKey: options.apiKey,
+    localVersions: localSources.localVersions
   });
 
   preselection.sources.warnings.forEach(message => {
@@ -202,6 +230,14 @@ export async function runInstallPipeline(
       preselection.selection,
       resolutionMode
     );
+  }
+
+  const higherLocalWarning = await maybeWarnHigherRegistryVersion({
+    packageName: options.packageName,
+    selectedVersion: selectedRootVersion
+  });
+  if (higherLocalWarning) {
+    console.log(`⚠️  ${higherLocalWarning}`);
   }
 
   const source: 'remote' | 'local' = preselection.resolutionSource ?? 'local';
