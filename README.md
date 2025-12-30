@@ -9,7 +9,7 @@
   </a>
 </p>
 
-<p align="center">Organized agentic coding for teams.</p>
+<p align="center">The open-source plugin system for AI coding.</p>
 <p align="center">
 <a href="https://www.npmjs.com/package/opkg " target="blank">
   <img src="https://img.shields.io/npm/v/opkg?style=flat-square" alt="Npm package for OpenPackage">
@@ -29,26 +29,39 @@
 
 # OpenPackage
 
-**OpenPackage is the centralized hub for organizing your specs and configs for agentic coding, giving you consistent context and workflows between sessions, projects, and teams.**
+**OpenPackage is the open-source plugins layer that extends your coding agents with reusable rules, commands, subagents, specs, and more across any AI coding platform, giving you consistent context and workflows between sessions, projects, and teams.**
 
 ## Why OpenPackage?
 
 Modern AI coding tools are powerful, but lack organization, reusability, and efficiency.
-- Specs across individuals and codebases, diverging, unversioned, and incohesive.
 - Rules, commands, and subagents scattered across multiple projects.
+- Specs across individuals and codebases, diverging, unversioned, and incohesive.
 - Familiar workflows rebuilt for each project, incompatible between AI coding platforms.
 
-OpenPackage organizes your specs and AI coding configs into reusable packages that can be accessed by any session, any project, and any coding platform.
+OpenPackage organizes your AI coding configs and specs/docs into reusable packages that can be accessed by any session, any project, and any coding platform.
 
 ## How it works
 
-At it's core, OpenPackage is a lightweight CLI tool for creating versioned, AI coding platform agnostic packages, each contaning sets of specs and coding config files for simplified installs, uninstalls, and distribution.  
+At it's core, OpenPackage is a lightweight CLI tool for creating versioned, AI coding platform agnostic packages, each contaning sets of coding config and workspace files for simplified installs, uninstalls, and distribution.  
 
 **No API keys required. No MCP installation.** 
 
 1. Declare a package
-2. Add specs and AI coding config files
+2. Add rules, commands, subagents, etc. and spec files
 3. Sync to multiple codebases
+
+## How OpenPackage compares
+
+vs. Claude Code Plugins
+
+- OpenPackage is fully open source and cross compatible across AI coding platforms out-of-box and configurable.
+- Teams not only benefit from platform agnostic tools but also better versioning, composition, and built in content syncing.
+
+vs. No Plugins
+
+- The tooling you worked hard to build remains isolated and non-reusable. 
+- Your workflows and specs scattered and out of sync across codebases.
+- Teams suffer from reduced productivity due to outdated specs and inconsistent tooling.
 
 ## Quick start
 
