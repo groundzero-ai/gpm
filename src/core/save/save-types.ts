@@ -28,9 +28,43 @@ export interface SaveCandidate {
   isMarkdown?: boolean;
 }
 
+export interface SaveCandidateGroup {
+  registryPath: string;
+  local?: SaveCandidate;
+  workspace: SaveCandidate[];
+}
+
+export type ResolutionStrategy =
+  | 'skip'
+  | 'write-single'
+  | 'write-newest'
+  | 'interactive'
+  | 'force-newest';
+
+export interface ResolutionResult {
+  selection: SaveCandidate | null; // null if only platform-specific variants selected
+  platformSpecific: SaveCandidate[];
+  strategy: ResolutionStrategy;
+  wasInteractive: boolean;
+}
+
+export interface WriteOperation {
+  registryPath: string;
+  targetPath: string;
+  content: string;
+  operation: 'create' | 'update' | 'skip';
+  isPlatformSpecific: boolean;
+  platform?: string;
+}
+
+export interface WriteResult {
+  operation: WriteOperation;
+  success: boolean;
+  error?: Error;
+}
+
+// DEPRECATED: Use ResolutionResult instead
 export interface SaveConflictResolution {
   selection: SaveCandidate;
   platformSpecific: SaveCandidate[];
 }
-
-

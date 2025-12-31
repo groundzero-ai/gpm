@@ -18,8 +18,9 @@ Key integration: Save ops use effective cwd (shell or --cwd; see [../../cli-opti
 2. **Resolve package source** → Determine the source-of-truth path (`path:`/`git:`/registry) for the package
 3. **Enforce mutability** → `save` must fail for immutable sources (registry paths)
 4. **Build candidates from mappings** → Collect workspace candidates for the mapped file/dir keys
-5. **Conflict resolution** → Choose which workspace candidate wins when multiple map to the same destination
-6. **Write back to source** → Update the package source tree
+5. **Parity checking** → Auto-skip candidates that already match source (universal or platform-specific)
+6. **Conflict resolution** → For remaining candidates, choose which workspace candidate becomes universal and which become platform-specific
+7. **Write back to source** → Update the package source tree with resolved content
 
 ---
 

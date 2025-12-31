@@ -2,145 +2,267 @@
 
 #### 1. Overview
 
-When multiple candidates exist for the same registry path, the pipeline must decide which content to use. This document describes the conflict resolution rules.
+When multiple workspace candidates exist for the same registry path, the pipeline must decide which content to save. This document describes the conflict resolution rules for the **workspace → source** save flow.
 
 ---
 
-#### 2. Resolution Goals
+#### 2. Single-Direction Principle
 
-For each group, the pipeline decides:
+Save is a **unidirectional** operation: workspace content overwrites source content. There is no comparison or "merging" with existing source files. The only conflicts that need resolution are:
 
-- Whether any action is needed (no-op when everything matches).
-- Which content becomes the **universal** package content for that registry path.
-- Which workspace candidates, if any, should be treated as **platform‑specific** sidecars.
+1. **Multiple workspace files mapping to the same registry path**
+2. **Platform-specific vs. universal content selection**
 
----
-
-#### 3. Conflict Types
-
-There are two main flavors of groups:
-
-1. **Root conflicts** (root documentation file for the package)
-2. **Regular conflicts** (all other paths)
+The source file is only used for **optimization** (skip writes when content is identical) and **parity checking** (skip prompts when workspace matches source).
 
 ---
 
-#### 4. Root Conflicts
+#### 3. Resolution Goals
 
-For the root package section file (e.g. the unified agents document):
+For each group where multiple workspace candidates exist, the pipeline decides:
 
-##### Ordering and deduplication
-
-- The pipeline orders candidates roughly by:
-  - Existing local content first (if any).
-  - Workspace candidates by newest modification time, then by display path.
-- Deduplicates candidates by content hash.
-
-##### Single candidate
-
-- If there is exactly one unique candidate:
-  - That candidate is used as the universal content for the root file.
-
-##### Multiple differing candidates
-
-- If the local candidate is newer than or equal to all workspace candidates:
-  - The local candidate is selected automatically.
-- Otherwise:
-  - With `--force`:
-    - The local candidate always wins.
-  - Without `--force`:
-    - The user is prompted to choose which candidate should become the universal root content.
-
-##### Output
-
-- The chosen root content is written into the package's root file location.
-- Platform‑specific root selections (e.g. separate root files for individual platforms) are persisted as separate package files where appropriate.
+- Which workspace candidate becomes the **universal** package content
+- Which workspace candidates should be saved as **platform-specific** variants
+- Which candidates should be skipped (already at parity or user choice)
 
 ---
 
-#### 5. Regular Conflicts
+#### 4. Parity Checking
 
-For non‑root paths:
+Before prompting, the pipeline checks if workspace files are already at parity with source:
 
-##### Ordering and deduplication
+##### Universal Parity
+A workspace file is at **universal parity** if its content hash matches the universal source file.
 
-- The pipeline again orders and deduplicates candidates.
-- Checks whether any workspace candidate actually **differs** from the local candidate.
+##### Platform-Specific Parity
+A workspace file is at **platform-specific parity** if:
+- It has a platform association (e.g., `cursor`, `claude`)
+- Its content hash matches the corresponding platform-specific source file (e.g., `commands.cursor.md`)
 
-##### No local candidate
+##### Auto-Skipping
+Files at parity are automatically skipped with a clear message:
+- "Already matches universal - auto-skipping"
+- "Already matches platform-specific file - auto-skipping"
 
-- If the file does not yet exist in the package:
-  - The selected workspace candidate becomes the new file content.
-
-##### Identical content
-
-- If local and all workspace candidates have identical content:
-  - The group is skipped (no changes).
-
-##### Differences with local candidate
-
-When there are differences and a local candidate exists:
-
-- If the local candidate is newer or as new as any workspace candidate:
-  - The local version wins silently (no prompt).
-- If a newer workspace candidate exists:
-  - Without `--force`:
-    - The user is prompted to choose which candidate should become universal content.
-  - With `--force`:
-    - The local candidate wins even if workspace content is newer.
+This eliminates unnecessary prompts when files are already up-to-date.
 
 ---
 
-#### 6. Resolution Principles
+#### 5. Conflict Types
 
-In all cases, the goal is to:
+##### No Workspace Candidates
+- No action needed
+- Group is skipped entirely
 
-- Prefer local content when it is at least as new as workspace content.
-- Ask the user only when a newer workspace change would override local content.
-- Respect an explicit `--force` override in favor of local content.
+##### Single Workspace Candidate
+- **If matches source (parity)**: Auto-skip (no write needed)
+- **If differs from source**: Write to source automatically (no prompt)
 
----
+##### Multiple Identical Workspace Candidates (Same Content Hash)
+- **If all match source (parity)**: Auto-skip all
+- **If differ from source**: Pick newest by mtime, write to source (no prompt)
 
-#### 7. Platform‑Specific Selection
-
-Some workspace candidates are associated with specific platforms (e.g. platform‑specific variants of a shared file).
-
-##### Marking platform-specific candidates
-
-- Before choosing the universal content, the user can be offered a chance to:
-  - Mark one or more workspace candidates as **platform‑specific**.
-  - These marked candidates will be written to platform‑specific registry paths instead of becoming the universal content.
-
-##### After marking
-
-- The remaining candidates (local + unmarked workspace candidates) participate in universal conflict resolution as described above.
-- Marked candidates are saved as platform‑specific sidecars if they are not chosen as the universal content.
-
-##### Use case
-
-This mechanism lets a user:
-
-- Keep a single universal file.
-- Simultaneously maintain richer, platform‑specific versions where needed.
+##### Multiple Differing Workspace Candidates
+- **With `--force` flag:**
+  - Auto-select newest by mtime (alphabetical tie-breaker if mtimes equal)
+  - Skip others
+  - No prompts
+- **Without `--force`:**
+  - Interactive resolution (see below)
 
 ---
 
-#### 8. Escalation from YAML Overrides to Full Platform Markdown
+#### 6. Interactive Resolution Flow
 
-When a registry path participates in the frontmatter/YAML override pipeline (e.g. `agents/*.md`) **and** the user marks one or more workspace candidates as platform‑specific during conflict resolution:
+When multiple differing workspace candidates exist, the user is prompted **once per file** in a single-step process:
 
-- **Universal body update**
-  - The universal markdown file keeps its existing frontmatter.
-  - If the selected universal candidate’s body differs, only the **markdown body** is updated.
-  - Frontmatter for that path continues to be managed by the YAML override pipeline.
+##### Step 1: Parity Filtering
+For each candidate (ordered by mtime, newest first):
+- Check universal parity → Auto-skip if matches
+- Check platform-specific parity → Auto-skip if matches
+- Continue to prompt if not at parity
 
-- **Escalating a platform to full `.platform.md`**
-  - Each marked platform‑specific workspace candidate is written to a platform‑specific markdown path (e.g. `yaml-test.qwen.md`) using the **full candidate content** (frontmatter + body).
-  - For root conflicts, only the section body is used (consistent with root handling elsewhere).
+##### Step 2: Per-File Prompts
+For each remaining candidate:
 
-- **Interaction with YAML overrides**
-  - If a platform has an existing YAML override file (e.g. `yaml-test.qwen.yml`) and is escalated to a full `.platform.md`:
-    - The corresponding YAML override file is removed as redundant.
-    - That platform is removed from the frontmatter merge plan for that registry path.
-  - After escalation, the remaining frontmatter/YAML plans (if any) are applied only for platforms that still use YAML overrides, ensuring universal frontmatter is not recomputed based on escalated full‑markdown variants.
+**Before universal selected:**
+- Options: `[Set as universal]` `[Mark as platform-specific]` `[Skip]`
 
+**After universal selected:**
+- Check if identical to selected universal → Auto-skip if matches
+- Options: `[Mark as platform-specific]` `[Skip]`
+
+##### Step 3: Resolution
+After all prompts:
+- **Universal selected**: Write to `<registry-path>`
+- **Platform-specific marked**: Write to `<registry-path>.<platform>.<ext>`
+- **Skipped**: No action (neither written)
+- **No universal selected**: Original universal file remains untouched, only platform-specific files written
+
+---
+
+#### 7. Resolution Principles
+
+The save flow ensures:
+
+1. **Workspace always wins**: Source content is overwritten by workspace selections
+2. **Smart filtering**: Files at parity are auto-skipped (no unnecessary prompts)
+3. **Progressive disclosure**: Options simplify after universal is selected
+4. **No data loss**: Skipped files remain in workspace, can be saved later
+5. **Platform-aware**: Respects both universal and platform-specific parity
+6. **User control**: User can skip individual files or mark as platform-specific
+
+---
+
+#### 8. Force Mode Behavior
+
+With `--force` flag:
+- Auto-selects newest workspace file by mtime
+- **Tie-breaking**: If multiple files have same mtime, selects first alphabetically
+- No prompts (fully automated)
+- Transparent logging of selections and skipped files
+- Does NOT auto-create platform-specific variants (only universal)
+
+Example force mode output:
+```
+ℹ Force mode: Auto-selecting newest (.cursor/commands/test.md)
+  Skipping: .claude/commands/test.md (older)
+  Skipping: .opencode/commands/test.md (older)
+
+✓ Saved my-pkg
+  Updated: commands/test.md
+```
+
+Example with tie-breaking:
+```
+ℹ Force mode: Multiple files have same modification time (1/15/2024 10:30 AM)
+  Auto-selecting first alphabetically: .claude/commands/test.md
+  Tied files:
+    → .claude/commands/test.md
+      .cursor/commands/test.md
+  Skipping: .cursor/commands/test.md (tied, not alphabetically first)
+
+💡 Tip: If this wasn't the file you wanted, run without --force
+```
+
+---
+
+#### 9. Edge Cases
+
+##### No Universal Selected
+If user skips all candidates or marks all as platform-specific:
+- Original universal file remains **untouched**
+- Only platform-specific files are written
+- No confirmation prompt needed
+
+##### All Files Skipped
+If user skips all files (or all are at parity):
+- No changes made
+- No confirmation prompt needed
+- Message: "No changes to `<path>`"
+
+##### All Files at Parity
+If all workspace files match source:
+- All auto-skipped with clear messages
+- No prompts shown
+- Message: "No changes needed"
+
+---
+
+#### 10. Example Scenarios
+
+##### Scenario A: Mixed Parity
+```
+Workspace:
+  .cursor/commands/test.md   (hash: abc123) ← Matches universal
+  .claude/commands/test.md   (hash: def456) ← Different!
+
+Source:
+  commands/test.md           (hash: abc123)
+
+Interactive flow:
+  ✓ .cursor/commands/test.md
+    Already matches universal - auto-skipping
+
+  .claude/commands/test.md (claude) [1/14/2024]
+  What should we do with this file?
+  > Mark as platform-specific
+
+Result:
+  Created: commands.claude.md (platform-specific)
+```
+
+##### Scenario B: Platform-Specific at Parity
+```
+Workspace:
+  .cursor/commands/test.md   (hash: abc123) ← Different from universal
+  .claude/commands/test.md   (hash: def456) ← Matches platform file!
+
+Source:
+  commands/test.md           (hash: xyz789)
+  commands.claude.md         (hash: def456) ← Matches!
+
+Interactive flow:
+  .cursor/commands/test.md (cursor) [1/15/2024]
+  What should we do with this file?
+  > Set as universal
+
+  ✓ .claude/commands/test.md
+    Already matches platform-specific file - auto-skipping
+
+Result:
+  Updated: commands/test.md (from cursor)
+```
+
+##### Scenario C: One Edited, Others at Parity
+```
+Workspace:
+  .cursor/commands/test.md   (hash: NEW123) ← User just edited
+  .claude/commands/test.md   (hash: abc123) ← At parity
+  .opencode/commands/test.md (hash: abc123) ← At parity
+
+Source:
+  commands/test.md           (hash: abc123)
+
+Interactive flow:
+  .cursor/commands/test.md (cursor) [1/15/2024 10:35 AM]
+  What should we do with this file?
+  > Set as universal
+
+  ✓ .claude/commands/test.md
+    Already matches universal - auto-skipping
+  ✓ .opencode/commands/test.md
+    Already matches universal - auto-skipping
+
+Result:
+  Updated: commands/test.md (from cursor)
+```
+
+---
+
+#### 11. Removed Behaviors
+
+The following behaviors have been removed as they conflicted with single-direction flow:
+
+- ❌ Comparing workspace mtime against source mtime for resolution
+- ❌ Preferring source content when it's newer
+- ❌ Prompting to choose between source and workspace versions
+- ❌ "Local wins with --force" logic
+- ❌ Two-phase prompt flow (platform marking + universal selection)
+
+---
+
+#### 12. Summary
+
+| Situation | Behavior |
+|-----------|----------|
+| **Single workspace file** | Write if differs from source, skip if at parity |
+| **Multiple identical** | Pick newest, write if differs from source |
+| **Multiple differing + force** | Auto-select newest (alphabetical tie-breaker) |
+| **Multiple differing + interactive** | Prompt per file (parity-filtered, single-step) |
+| **File matches universal** | Auto-skip with message |
+| **File matches platform-specific** | Auto-skip with message |
+| **No universal selected** | Original untouched, only platform-specific written |
+| **All skipped** | No changes, no confirmation |
+
+The conflict resolution ensures a smooth, intuitive workflow that minimizes prompts while giving users full control over their content.

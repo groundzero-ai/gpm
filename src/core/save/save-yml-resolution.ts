@@ -19,12 +19,10 @@ import {
 } from '../../utils/markdown-frontmatter.js';
 import { UTF8_ENCODING } from './constants.js';
 import type { Platform } from '../platforms.js';
+import type { SaveCandidateGroup } from './save-types.js';
 
-export interface SaveCandidateGroup {
-  registryPath: string;
-  local?: SaveCandidate;
-  workspace: SaveCandidate[];
-}
+// Re-export for backward compatibility
+export type { SaveCandidateGroup };
 
 interface WorkspaceFrontmatterEntry {
   platform: Platform;

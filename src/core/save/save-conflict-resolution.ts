@@ -20,12 +20,14 @@ import {
   applyFrontmatterMergePlans,
 } from './save-yml-resolution.js';
 import { loadLocalCandidates, discoverWorkspaceCandidates } from './save-candidate-loader.js';
+// Using deprecated compatibility layer from save-conflict-resolver.ts
+// TODO: Migrate this file to use new modular architecture
 import {
   buildCandidateGroups,
-  pruneWorkspaceCandidatesWithLocalPlatformVariants,
   resolveGroup,
   resolveRootGroup
 } from './save-conflict-resolver.js';
+import { pruneExistingPlatformCandidates as pruneWorkspaceCandidatesWithLocalPlatformVariants } from './save-platform-handler.js';
 import { readPackageFilesForRegistry } from '../../utils/package-copy.js';
 import { composeMarkdown } from '../../utils/markdown-frontmatter.js';
 

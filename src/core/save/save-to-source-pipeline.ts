@@ -1,202 +1,215 @@
-import { join, dirname } from 'path';
-
 import type { CommandResult } from '../../types/index.js';
-import { FILE_PATTERNS } from '../../constants/index.js';
 import { assertMutableSourceOrThrow } from '../../utils/source-mutability.js';
 import { readWorkspaceIndex } from '../../utils/workspace-index-yml.js';
 import { resolvePackageSource } from '../source-resolution/resolve-package-source.js';
-import { exists, ensureDir, readTextFile, writeTextFile, walkFiles, getStats } from '../../utils/fs.js';
-import { normalizePathForProcessing } from '../../utils/path-normalization.js';
-import { calculateFileHash } from '../../utils/hash-utils.js';
-import { inferPlatformFromWorkspaceFile } from '../platforms.js';
-import {
-  buildCandidateGroups,
-  pruneWorkspaceCandidatesWithLocalPlatformVariants,
-  resolveGroup,
-  resolveRootGroup
-} from './save-conflict-resolver.js';
-import { SaveCandidate } from './save-types.js';
-import type { SaveCandidateGroup } from './save-yml-resolution.js';
-import { createPlatformSpecificRegistryPath } from '../../utils/platform-specific-paths.js';
 import { logger } from '../../utils/logger.js';
+import { buildCandidates } from './save-candidate-builder.js';
+import { buildCandidateGroups, filterGroupsWithWorkspace } from './save-group-builder.js';
+import { analyzeGroup } from './save-conflict-analyzer.js';
+import { executeResolution } from './save-resolution-executor.js';
+import { pruneExistingPlatformCandidates } from './save-platform-handler.js';
+import { writeResolution } from './save-write-coordinator.js';
+import { buildSaveReport, createCommandResult, createSuccessResult, createErrorResult } from './save-result-reporter.js';
+import type { ConflictAnalysis } from './save-conflict-analyzer.js';
+import type { WriteResult } from './save-types.js';
+
+/**
+ * Orchestrates the entire save pipeline
+ * Delegates to specialized modules for each phase
+ */
 
 export interface SaveToSourceOptions {
   force?: boolean;
 }
 
+interface ValidationResult {
+  valid: boolean;
+  cwd?: string;
+  packageRoot?: string;
+  filesMapping?: Record<string, string[]>;
+  error?: string;
+}
+
+/**
+ * Run the complete save-to-source pipeline
+ * 
+ * This is the main entry point for the save operation.
+ * It coordinates all phases of the save process.
+ */
 export async function runSaveToSourcePipeline(
   packageName: string | undefined,
   options: SaveToSourceOptions = {}
 ): Promise<CommandResult> {
-  const cwd = process.cwd();
-  if (!packageName) {
-    return { success: false, error: 'Package name is required for save.' };
+  // Phase 1: Validate preconditions
+  const validation = await validateSavePreconditions(packageName);
+  if (!validation.valid) {
+    return createErrorResult(validation.error!);
   }
+  
+  const { cwd, packageRoot, filesMapping } = validation;
+  
+  // Phase 2: Build candidates from workspace and source
+  logger.debug(`Building candidates for ${packageName}`);
+  const candidateResult = await buildCandidates({
+    packageRoot: packageRoot!,
+    workspaceRoot: cwd!,
+    filesMapping: filesMapping!
+  });
+  
+  if (candidateResult.errors.length > 0) {
+    logger.warn(`Encountered ${candidateResult.errors.length} error(s) building candidates`);
+    candidateResult.errors.forEach(err => 
+      logger.warn(`  ${err.path}: ${err.reason}`)
+    );
+  }
+  
+  // Phase 3: Build candidate groups (organize by registry path)
+  logger.debug('Building candidate groups');
+  const allGroups = buildCandidateGroups(
+    candidateResult.localCandidates,
+    candidateResult.workspaceCandidates
+  );
+  
+  // Phase 4: Prune platform-specific candidates with existing files
+  logger.debug('Pruning existing platform-specific files');
+  await pruneExistingPlatformCandidates(packageRoot!, allGroups);
+  
+  // Phase 5: Filter to groups with workspace candidates
+  const activeGroups = filterGroupsWithWorkspace(allGroups);
+  
+  if (activeGroups.length === 0) {
+    return createSuccessResult(
+      packageName!,
+      `✓ Saved ${packageName}\n  No workspace changes detected`
+    );
+  }
+  
+  logger.debug(`Processing ${activeGroups.length} group(s) with workspace candidates`);
+  
+  // Phase 6: Analyze groups and execute resolutions
+  const analyses: ConflictAnalysis[] = [];
+  const allWriteResults: WriteResult[][] = [];
+  
+  for (const group of activeGroups) {
+    // Analyze the group
+    const analysis = analyzeGroup(group, options.force ?? false);
+    analyses.push(analysis);
+    
+    // Skip if no action needed
+    if (analysis.type === 'no-action-needed' || analysis.type === 'no-change-needed') {
+      logger.debug(`Skipping ${group.registryPath}: ${analysis.type}`);
+      continue;
+    }
+    
+    // Execute resolution strategy (pass packageRoot for parity checking)
+    const resolution = await executeResolution(group, analysis, packageRoot!);
+    if (!resolution) {
+      logger.debug(`No resolution returned for ${group.registryPath}`);
+      continue;
+    }
+    
+    // Write resolved content to source
+    const writeResults = await writeResolution(
+      packageRoot!,
+      group.registryPath,
+      resolution,
+      group.local
+    );
+    
+    allWriteResults.push(writeResults);
+  }
+  
+  // Phase 7: Build and format report
+  logger.debug('Building save report');
+  const report = buildSaveReport(packageName!, analyses, allWriteResults);
+  
+  return createCommandResult(report);
+}
 
-  const { index } = await readWorkspaceIndex(cwd);
-  const pkgIndex = index.packages?.[packageName];
-  if (!pkgIndex || !pkgIndex.files || Object.keys(pkgIndex.files).length === 0) {
+/**
+ * Validate save preconditions
+ * 
+ * Checks that:
+ * - Package name is provided
+ * - Workspace index exists
+ * - Package has file mappings
+ * - Package source is resolvable
+ * - Source is mutable (not registry)
+ */
+async function validateSavePreconditions(
+  packageName: string | undefined
+): Promise<ValidationResult> {
+  const cwd = process.cwd();
+  
+  // Check package name provided
+  if (!packageName) {
     return {
-      success: false,
+      valid: false,
+      error: 'Package name is required for save.'
+    };
+  }
+  
+  // Read workspace index
+  let index;
+  try {
+    const result = await readWorkspaceIndex(cwd);
+    index = result.index;
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Failed to read workspace index: ${error}`
+    };
+  }
+  
+  // Check package exists in index
+  const pkgIndex = index.packages?.[packageName];
+  if (!pkgIndex) {
+    return {
+      valid: false,
+      error:
+        `Package '${packageName}' not found in .openpackage/openpackage.index.yml. ` +
+        `Run 'opkg apply ${packageName}' or 'opkg install ...' first.`
+    };
+  }
+  
+  // Check package has file mappings
+  if (!pkgIndex.files || Object.keys(pkgIndex.files).length === 0) {
+    return {
+      valid: false,
       error:
         `No mappings found for '${packageName}' in .openpackage/openpackage.index.yml. ` +
         `Run 'opkg apply ${packageName}' or 'opkg install ...' first.`
     };
   }
-
-  const source = await resolvePackageSource(cwd, packageName);
-  assertMutableSourceOrThrow(source.absolutePath, { packageName: source.packageName, command: 'save' });
-
-  const groups = await buildGroupsFromIndex(cwd, source.absolutePath, pkgIndex.files);
-  // Prune workspace candidates when a platform-specific file already exists locally.
-  await pruneWorkspaceCandidatesWithLocalPlatformVariants(source.absolutePath, groups);
-
-  // Resolve conflicts per group and write selections back to source.
-  for (const group of groups) {
-    const isRoot = group.registryPath === FILE_PATTERNS.AGENTS_MD;
-    const resolution = isRoot
-      ? await resolveRootGroup(group, options.force ?? false)
-      : await resolveGroup(group, options.force ?? false);
-
-    if (!resolution) continue;
-
-    // Write universal selection.
-    await writeCandidateToSource(source.absolutePath, group.registryPath, resolution.selection);
-
-    // Write platform-specific selections when provided.
-    for (const platformCandidate of resolution.platformSpecific) {
-      if (!platformCandidate.platform || platformCandidate.platform === 'ai') continue;
-      const platformPath = createPlatformSpecificRegistryPath(group.registryPath, platformCandidate.platform);
-      if (!platformPath) continue;
-      await writeCandidateToSource(source.absolutePath, platformPath, platformCandidate);
-    }
-  }
-
-  return { success: true };
-}
-
-async function writeCandidateToSource(
-  packageRoot: string,
-  registryPath: string,
-  candidate: SaveCandidate
-): Promise<void> {
-  const targetPath = join(packageRoot, registryPath);
-  await ensureDir(dirname(targetPath));
-  await writeTextFile(targetPath, candidate.content);
-}
-
-async function buildGroupsFromIndex(
-  cwd: string,
-  packageRoot: string,
-  filesMapping: Record<string, string[]>
-): Promise<SaveCandidateGroup[]> {
-  const workspaceCandidates: SaveCandidate[] = [];
-  const localCandidates: SaveCandidate[] = [];
-
-  // Preload locals only for registry paths present in mapping.
-  for (const registryPath of Object.keys(filesMapping)) {
-    const normalizedKey = normalizePathForProcessing(registryPath);
-    if (!normalizedKey) continue;
-    const absLocal = join(packageRoot, normalizedKey);
-    if (await exists(absLocal)) {
-      const candidate = await buildCandidateFromPath('local', absLocal, normalizedKey, packageRoot, cwd);
-      if (candidate) {
-        localCandidates.push(candidate);
-      }
-    }
-  }
-
-  for (const [rawKey, targets] of Object.entries(filesMapping)) {
-    const registryKey = normalizePathForProcessing(rawKey);
-    if (!registryKey || !Array.isArray(targets)) continue;
-
-    for (const workspaceRel of targets) {
-      const normalizedTargetDir = normalizePathForProcessing(workspaceRel);
-      if (!normalizedTargetDir) continue;
-      const absTargetDir = join(cwd, normalizedTargetDir);
-
-      if (registryKey.endsWith('/')) {
-        const files = await collectFilesUnderDirectory(absTargetDir);
-        for (const relFile of files) {
-          const registryPath = normalizePathForProcessing(join(registryKey, relFile));
-          if (!registryPath) continue;
-          const absWorkspaceFile = join(absTargetDir, relFile);
-          const candidate = await buildCandidateFromPath(
-            'workspace',
-            absWorkspaceFile,
-            registryPath,
-            packageRoot,
-            cwd
-          );
-          if (candidate) workspaceCandidates.push(candidate);
-        }
-      } else {
-        const absWorkspaceFile = absTargetDir;
-        if (!(await exists(absWorkspaceFile))) continue;
-        const candidate = await buildCandidateFromPath(
-          'workspace',
-          absWorkspaceFile,
-          registryKey,
-          packageRoot,
-          cwd
-        );
-        if (candidate) workspaceCandidates.push(candidate);
-      }
-    }
-  }
-
-  const groups = buildCandidateGroups(localCandidates, workspaceCandidates);
-  // Only keep groups that have at least one workspace candidate (we don't want to save unrelated local files)
-  return groups.filter(group => group.workspace.length > 0);
-}
-
-async function buildCandidateFromPath(
-  source: 'local' | 'workspace',
-  absPath: string,
-  registryPath: string,
-  packageRoot: string,
-  cwd: string
-): Promise<SaveCandidate | null> {
+  
+  // Resolve package source
+  let source;
   try {
-    const content = await readTextFile(absPath);
-    const contentHash = await calculateFileHash(content);
-    const stats = await getStats(absPath);
-    const displayPath =
-      source === 'workspace'
-        ? normalizePathForProcessing(absPath.slice(cwd.length + 1)) || registryPath
-        : normalizePathForProcessing(absPath.slice(packageRoot.length)) || registryPath;
-    const platform = source === 'workspace'
-      ? inferPlatformFromWorkspaceFile(absPath, deriveSourceDir(displayPath), registryPath, cwd)
-      : undefined;
-
-    return {
-      source,
-      registryPath,
-      fullPath: absPath,
-      content,
-      contentHash,
-      mtime: stats.mtime.getTime(),
-      displayPath,
-      platform
-    };
+    source = await resolvePackageSource(cwd, packageName);
   } catch (error) {
-    logger.warn(`Failed to build candidate for ${absPath}: ${error}`);
-    return null;
+    return {
+      valid: false,
+      error: `Failed to resolve package source: ${error}`
+    };
   }
-}
-
-async function collectFilesUnderDirectory(absDir: string): Promise<string[]> {
-  const collected: string[] = [];
-  if (!(await exists(absDir))) return collected;
-
-  for await (const absFile of walkFiles(absDir)) {
-    collected.push(absFile.slice(absDir.length + 1).replace(/\\/g, '/'));
+  
+  // Check source is mutable
+  try {
+    assertMutableSourceOrThrow(source.absolutePath, {
+      packageName: source.packageName,
+      command: 'save'
+    });
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
-  return collected;
-}
-
-function deriveSourceDir(relPath: string | undefined): string {
-  if (!relPath) return '';
-  const first = relPath.split('/')[0] || '';
-  return first;
+  
+  return {
+    valid: true,
+    cwd,
+    packageRoot: source.absolutePath,
+    filesMapping: pkgIndex.files
+  };
 }
