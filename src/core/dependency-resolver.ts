@@ -646,6 +646,7 @@ export async function resolveDependencies(
         version: installedVersion,
         pkg,
         isRoot,
+        contentRoot, // Track content root for consistent access
         conflictResolution: 'kept'
       });
       return buildResolveResult(resolvedPackages, missing, remoteOutcomes);
@@ -657,6 +658,7 @@ export async function resolveDependencies(
         version: installedVersion,
         pkg,
         isRoot,
+        contentRoot, // Track content root for consistent access
         conflictResolution: 'kept'
       });
       return buildResolveResult(resolvedPackages, missing, remoteOutcomes);
@@ -678,6 +680,7 @@ export async function resolveDependencies(
     pkg,
     isRoot,
     source: resolutionSource ?? 'local',
+    contentRoot, // Track content root for workspace/global mutable sources
     requiredVersion: resolvedVersion, // Track the resolved version
     requiredRange: versionRange // Track the original range
   });
@@ -712,6 +715,7 @@ export async function resolveDependencies(
           pkg: pkg,
           isRoot: false,
           source: sourceType,
+          contentRoot: sourcePath,
           requiredVersion: pkg.metadata.version,
           requiredRange
         });
