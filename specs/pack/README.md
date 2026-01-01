@@ -8,7 +8,10 @@
 - Key: Makes package immutable; enables install/apply from registry path.
 
 ## Flow
-1. Resolve package source path (from context or arg).
+1. Resolve package source path (from context or arg):
+   - Priority: CWD → Workspace packages → Global packages
+   - Skips registry (already immutable) and remote (not relevant)
+   - See [Package Name Resolution](./package-name-resolution.md) for details
 2. Read `openpackage.yml.version` → Target stable `S` (no bump).
 3. Copy entire package root (payload rules) to registry/<name>/<S>/ (overwrite if exists).
 4. Update workspace index `workspace.version = S`; refresh file mappings.
@@ -25,16 +28,27 @@
 - `--dry-run`: Simulate without write.
 - Global: `--cwd`, etc. (see [CLI Options](../cli-options.md)).
 
-## Example
+## Examples
+
+### Pack from Current Directory
 ```bash
-opkg pack my-rules  # Assumes cwd/context; copies to registry/my-rules/1.0.0/
+cd ~/projects/my-package
+opkg pack                    # Packs CWD (no name needed)
+opkg pack my-package         # Also packs CWD (name matches)
 ```
 
-Output: Shows created path, version.
+### Pack from Workspace or Global Packages
+```bash
+cd ~/my-workspace
+opkg pack shared-component   # Finds in .openpackage/packages/ or ~/.openpackage/packages/
+```
+
+Output: Shows created path, version, and source location.
 
 ## Errors
-- Immutable source: "Cannot pack from registry."
-- Invalid version: Semver checks.
+- Package not found: "Package 'X' not found. Searched: current directory, workspace packages, and global packages."
+- Invalid version: Semver checks require valid semver in openpackage.yml
+- Missing manifest: "openpackage.yml not found at [path]"
 
 ## Integration
 - Called after iterative `save` (WIP → stable promotion).
