@@ -70,6 +70,7 @@ export async function classifyPackageInput(
                         raw.startsWith('../') || 
                         raw === '.' ||
                         raw.startsWith('~/') ||
+                        raw.startsWith('.openpackage/') || // Include .openpackage paths
                         (isAbsolute(raw) && !raw.includes('@'));
   
   if (isTarballPath || looksLikePath) {

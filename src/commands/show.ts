@@ -1,115 +1,28 @@
-import { basename } from 'path';
-import { isJunk } from 'junk';
+/**
+ * @fileoverview Show command implementation
+ * 
+ * Displays detailed information about a package from any source.
+ * Supports package names, paths, git URLs, and tarballs.
+ */
+
 import { Command } from 'commander';
-import { CommandResult } from '../types/index.js';
-import { ensureRegistryDirectories } from '../core/directory.js';
+import { withErrorHandling } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
-import { withErrorHandling, PackageNotFoundError } from '../utils/errors.js';
-import { describeVersionRange, isExactVersion } from '../utils/version-ranges.js';
-import { parsePackageInput } from '../utils/package-name.js';
-import { packageManager } from '../core/package.js';
-import { formatVersionLabel, isUnversionedVersion } from '../utils/package-versioning.js';
+import { runShowPipeline } from '../core/show/show-pipeline.js';
 
 /**
- * Show package details command implementation (supports package@version)
+ * Show package details command
  */
-async function showPackageCommand(packageInput: string): Promise<CommandResult> {
-  logger.debug(`Showing details for package input: ${packageInput}`);
-  
-  // Ensure registry directories exist
-  await ensureRegistryDirectories();
-  
-  try {
-    // Parse input (supports name@version or name@range)
-    const { name, version } = parsePackageInput(packageInput);
-    
-    // Load package (resolves ranges to a specific version)
-    const pkg = await packageManager.loadPackage(name, version);
-    const metadata = pkg.metadata;
-    const files = pkg.files;
-    const resolvedVersion = metadata.version ?? version;
-    const unversioned = isUnversionedVersion(resolvedVersion);
+async function showPackageCommand(packageInput: string): Promise<void> {
+  logger.debug('Show command invoked', { packageInput });
 
-    // Detect partial packages from manifest flag or local state (covers cases where manifest was not written)
-    const versionState = await packageManager.getPackageVersionState(name, resolvedVersion);
-    const isPartial = Boolean((metadata as any).partial) || versionState.isPartial;
-    
-    // Display package details
-    console.log(`✓ Package: ${metadata.name}`);
-    
-    if (!unversioned) {
-      console.log(`✓ Version: ${metadata.version}`);
-    }
-    if (metadata.description) {
-      console.log(`✓ Description: ${metadata.description}`);
-    }
-    if (metadata.keywords && metadata.keywords.length > 0) {
-      console.log(`✓ Keywords: ${metadata.keywords.join(', ')}`);
-    }
-    if (metadata.author) {
-      console.log(`✓ Author: ${metadata.author}`);
-    }
-    if (metadata.license) {
-      console.log(`✓ License: ${metadata.license}`);
-    }
-    if (metadata.homepage) {
-      console.log(`✓ Homepage: ${metadata.homepage}`);
-    }
-    if (metadata.repository) {
-      const repo = metadata.repository;
-      console.log(`✓ Repository: ${repo.type} - ${repo.url}${repo.directory ? ` (directory: ${repo.directory})` : ''}`);
-    }
-    console.log(`✓ Private: ${metadata.private ? 'Yes' : 'No'}`);
+  const cwd = process.cwd();
+  const result = await runShowPipeline(packageInput, cwd);
 
-    if (isPartial) {
-      console.log('✓ Partial: Yes');
-    }
-    
-    // Dependencies section
-    if (metadata.packages && metadata.packages.length > 0) {
-      console.log(`✓ Imported Packages (${metadata.packages.length}):`);
-      for (const dep of metadata.packages) {
-        const versionLabel = formatVersionLabel(dep.version);
-        const rangeDescription = dep.version && !isExactVersion(dep.version) 
-          ? ` (${describeVersionRange(dep.version)})`
-          : '';
-        console.log(`  • ${dep.name}@${versionLabel}${rangeDescription}`);
-      }
-    }
-    
-    if (metadata['dev-packages'] && metadata['dev-packages'].length > 0) {
-      console.log(`✓ Imported Dev Packages (${metadata['dev-packages'].length}):`);
-      for (const dep of metadata['dev-packages']) {
-        const versionLabel = formatVersionLabel(dep.version);
-        const rangeDescription = dep.version && !isExactVersion(dep.version) 
-          ? ` (${describeVersionRange(dep.version)})`
-          : '';
-        console.log(`  • ${dep.name}@${versionLabel}${rangeDescription}`);
-      }
-    }
-    
-    // Files section - match install command's file list format
-    const filteredFiles = files.filter(f => !isJunk(basename(f.path)));
-    const sortedFilePaths = filteredFiles.map(f => f.path).sort((a, b) => a.localeCompare(b));
-    console.log(`✓ Files: ${sortedFilePaths.length}`);
-    for (const filePath of sortedFilePaths) {
-      console.log(`   ├── ${filePath}`);
-    }
-    console.log('');
-    
-    return {
-      success: true,
-      data: metadata
-    };
-  } catch (error) {
-    // Align with other commands' UX for not found
-    if (error instanceof PackageNotFoundError) {
-      return { success: false, error: `Package '${packageInput}' not found` };
-    }
-    throw new Error(`Failed to show package: ${error}`);
+  if (!result.success) {
+    throw new Error(result.error || 'Show operation failed');
   }
 }
-
 
 /**
  * Setup the show command
@@ -117,8 +30,20 @@ async function showPackageCommand(packageInput: string): Promise<CommandResult> 
 export function setupShowCommand(program: Command): void {
   program
     .command('show')
-    .description('Show details of a package. Supports versioning with package@version syntax.')
-    .argument('<package-name>', 'name of the package to show. Supports package@version syntax.')
+    .description(
+      'Show details of a package from any source.\n' +
+      'Supports:\n' +
+      '  - Package names: show my-package, show my-package@1.0.0\n' +
+      '  - Paths: show ./path/to/package, show .openpackage/packages/my-pkg\n' +
+      '  - Git: show git:https://github.com/user/repo.git#ref\n' +
+      '  - Tarballs: show ./package.tgz\n\n' +
+      'Resolution priority for package names (like pack):\n' +
+      '  1. Current directory (if name matches)\n' +
+      '  2. Workspace packages (.openpackage/packages/)\n' +
+      '  3. Global packages (~/.openpackage/packages/)\n' +
+      '  4. Local registry (~/.openpackage/registry/)'
+    )
+    .argument('<package>', 'package name, path, git URL, or tarball')
     .action(withErrorHandling(async (packageInput: string) => {
       await showPackageCommand(packageInput);
     }));

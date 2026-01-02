@@ -13,6 +13,7 @@ This file provides high-level semantics for core commands in the path-based mode
 | `pack` | Source → Registry | Create immutable snapshot | ✅ | N/A |
 | `apply` | Source/Registry → Workspace | Sync content to platforms + update index | ✅ | ✅ |
 | `install` | Registry → Workspace | Install version (git/path too) + update index | N/A | ✅ |
+| `show` | N/A | Display package details (read-only) | ✅ | ✅ |
 | `status` | N/A | Report sync state | ✅ | ✅ |
 | `uninstall` | Workspace | Remove package files/mappings | ✅ | ✅ |
 | `push` | Local → Remote | Upload (deferred details) | N/A | N/A |
@@ -105,6 +106,22 @@ Remove package from workspace.
 - Example: `opkg uninstall my-pkg`.
 - See [Uninstall](uninstall/).
 
+### `show`
+
+Display detailed package information (read-only inspection).
+
+- Purpose: Inspect packages from any source without modification.
+- Flow: Classify input → Resolve package location → Collect metadata/files → Display formatted output.
+- Sources: Package names (unified resolution), paths, git URLs, tarballs.
+- Resolution Priority: CWD → Workspace → Global → Registry (same as `pack`).
+- Options: None currently (future: `--remote`, `--json`, `--tree`).
+- Example: 
+  - `opkg show my-pkg` (by name)
+  - `opkg show .openpackage/packages/shared-utils` (by path)
+  - `opkg show git:https://github.com/user/repo.git#main` (from git)
+- Output: Name, version, source, type, description, dependencies, file list.
+- See [Show](show/).
+
 ### `new`
 
 Create a new package with manifest.
@@ -127,6 +144,7 @@ Create a new package with manifest.
 | `pack` | ✅ Creates version | N/A | Registry |
 | `apply` | ✅ Syncs to workspace | ✅ Syncs to workspace | Workspace |
 | `install` | N/A | ✅ Syncs to workspace | Workspace |
+| `show` | ✅ Displays info | ✅ Displays info | N/A (read-only) |
 | `status` | ✅ Shows status | ✅ Shows status | N/A |
 | `uninstall` | ✅ Removes | ✅ Removes | N/A (deletes) |
 
