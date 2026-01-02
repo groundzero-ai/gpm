@@ -28,6 +28,7 @@ import { setupConfigureCommand } from './commands/configure.js';
 import { setupDuplicateCommand } from './commands/duplicate.js';
 import { setupLoginCommand } from './commands/login.js';
 import { setupLogoutCommand } from './commands/logout.js';
+import { setupSetCommand } from './commands/set.js';
 
 /**
  * OpenPackage CLI - Main entry point
@@ -55,6 +56,7 @@ setupAddCommand(program);
 setupRemoveCommand(program);
 setupApplyCommand(program);
 setupSaveCommand(program);
+setupSetCommand(program);
 setupPackCommand(program);
 setupInstallCommand(program);
 setupUninstallCommand(program);

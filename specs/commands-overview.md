@@ -10,6 +10,7 @@ This file provides high-level semantics for core commands in the path-based mode
 | `add` | Filesystem → Source | Add new files (source-only) | ✅ | ❌ Error |
 | `remove` | Source → Deletion | Remove files from source (source-only) | ✅ | ❌ Error |
 | `save` | Workspace → Source | Sync edits back (requires install) | ✅ | ❌ Error |
+| `set` | N/A | Update manifest metadata | ✅ | ❌ Error |
 | `pack` | Source → Registry | Create immutable snapshot | ✅ | N/A |
 | `apply` | Source/Registry → Workspace | Sync content to platforms + update index | ✅ | ✅ |
 | `install` | Registry → Workspace | Install version (git/path too) + update index | N/A | ✅ |
@@ -61,6 +62,21 @@ Remove files from mutable source.
 - Works from any directory with any mutable package.
 - Opposite of `add` command.
 - See [Remove](remove/).
+
+### `set`
+
+Update manifest metadata fields in openpackage.yml for mutable packages.
+
+- Preconditions: Mutable source; fails on registry.
+- Flow: Resolve package → Load manifest → Collect updates (interactive or flags) → Validate → Apply → Write.
+- Modes: Interactive (prompts for fields), Batch (via CLI flags), Non-interactive (CI/CD).
+- Fields: `--ver` (version), `--name`, `--description`, `--keywords`, `--author`, `--license`, `--homepage`, `--private`.
+- Options: `--force` (skip confirmation), `--non-interactive` (require flags).
+- Example: 
+  - `opkg set my-pkg --ver 1.2.0` (update version)
+  - `opkg set my-pkg` (interactive mode)
+  - `opkg set --ver 2.0.0 --description "Updated"` (CWD package)
+- See [Set](set/).
 
 ### `pack`
 
@@ -141,6 +157,7 @@ Create a new package with manifest.
 | `save` | ✅ Syncs to source | ❌ Error | Source path |
 | `add` | ✅ Adds to source | ❌ Error | Source path |
 | `remove` | ✅ Removes from source | ❌ Error | N/A (deletes) |
+| `set` | ✅ Updates manifest | ❌ Error | Source path |
 | `pack` | ✅ Creates version | N/A | Registry |
 | `apply` | ✅ Syncs to workspace | ✅ Syncs to workspace | Workspace |
 | `install` | N/A | ✅ Syncs to workspace | Workspace |
