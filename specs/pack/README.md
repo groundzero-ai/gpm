@@ -9,9 +9,12 @@
 
 ## Flow
 1. Resolve package source path (from context or arg):
-   - Priority: CWD → Workspace packages → Global packages
-   - Skips registry (already immutable) and remote (not relevant)
-   - See [Package Name Resolution](./package-name-resolution.md) for details
+   - **Input Types**: Package name, absolute path, relative path
+   - **Path Detection**: Inputs starting with `/`, `./`, `../`, or `~` are treated as paths
+   - **Package Name Resolution** (for non-path inputs):
+     - Priority: CWD → Workspace packages → Global packages
+     - Skips registry (already immutable) and remote (not relevant)
+     - See [Package Name Resolution](./package-name-resolution.md) for details
 2. Read `openpackage.yml.version` → Target stable `S` (no bump).
 3. Copy entire package root (payload rules) to registry/<name>/<S>/ (overwrite if exists).
 4. Update workspace index `workspace.version = S`; refresh file mappings.
@@ -43,12 +46,28 @@ cd ~/my-workspace
 opkg pack shared-component   # Finds in .openpackage/packages/ or ~/.openpackage/packages/
 ```
 
+### Pack from Absolute Path
+```bash
+opkg pack /Users/user/projects/my-package    # Pack from absolute path
+opkg pack ~/projects/my-package              # Pack from home directory path
+```
+
+### Pack from Relative Path
+```bash
+cd ~/workspace
+opkg pack ./packages/shared-component        # Pack from relative path
+opkg pack ../sibling-project                 # Pack from parent directory
+```
+
 Output: Shows created path, version, and source location.
 
 ## Errors
-- Package not found: "Package 'X' not found. Searched: current directory, workspace packages, and global packages."
-- Invalid version: Semver checks require valid semver in openpackage.yml
-- Missing manifest: "openpackage.yml not found at [path]"
+- **Package not found**: "Package 'X' not found. Searched: current directory, workspace packages, and global packages."
+- **Invalid version**: Semver checks require valid semver in openpackage.yml
+- **Missing manifest**: "openpackage.yml not found at [path]"
+- **Invalid path**: "Path 'X' exists but is not a valid OpenPackage directory. Valid packages must contain openpackage.yml"
+- **Tarball input**: "Pack command does not support tarball inputs. To pack from a tarball, first extract it to a directory."
+- **Git input**: "Pack command does not support git inputs. To pack from a git repository, first clone it to a directory."
 
 ## Integration
 - Called after iterative `save` (WIP → stable promotion).

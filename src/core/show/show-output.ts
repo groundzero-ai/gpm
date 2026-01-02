@@ -114,7 +114,6 @@ function displayFileList(files: string[]): void {
   for (const filePath of files) {
     console.log(`   ├── ${filePath}`);
   }
-  console.log('');
 }
 
 /**

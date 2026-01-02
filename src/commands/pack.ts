@@ -13,12 +13,15 @@ async function packPackageCommand(
 export function setupPackCommand(program: Command): void {
   program
     .command('pack')
-    .argument('[package-name]', 'package name (optional if cwd is a package)')
+    .argument('[package]', 'package name or path (optional if cwd is a package)')
     .description(
       'Snapshot the package source into the local registry directory.\n' +
       'Usage:\n' +
-      '  opkg pack                  # Pack cwd package (requires openpackage.yml)\n' +
-      '  opkg pack <package-name>   # Pack specific package by name'
+      '  opkg pack                     # Pack cwd package (requires openpackage.yml)\n' +
+      '  opkg pack <package-name>      # Pack specific package by name\n' +
+      '  opkg pack <path>              # Pack package at the specified path\n' +
+      '  opkg pack /absolute/path      # Pack package from absolute path\n' +
+      '  opkg pack ./relative/path     # Pack package from relative path'
     )
     .option('-f, --force', 'legacy flag (ignored by pack)')
     .option('--output <path>', 'write snapshot directly into the target directory instead of the registry path')

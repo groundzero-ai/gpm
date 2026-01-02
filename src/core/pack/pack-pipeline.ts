@@ -9,6 +9,8 @@ import { parsePackageYml } from '../../utils/package-yml.js';
 import { exists, remove } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
 import { resolvePackageByName } from '../../utils/package-name-resolution.js';
+import { classifyPackageInput } from '../../utils/package-input.js';
+import { ValidationError } from '../../utils/errors.js';
 
 interface ResolvedSource {
   name: string;
@@ -19,10 +21,10 @@ interface ResolvedSource {
 
 async function resolveSource(
   cwd: string,
-  packageName?: string
+  packageInput?: string
 ): Promise<ResolvedSource> {
-  // No package name provided - pack CWD as package
-  if (!packageName) {
+  // No package input provided - pack CWD as package
+  if (!packageInput) {
     const manifestPath = path.join(cwd, FILE_PATTERNS.OPENPACKAGE_YML);
     if (!(await exists(manifestPath))) {
       throw new Error('No openpackage.yml found in current directory; specify a package name or run inside a package root.');
@@ -36,56 +38,82 @@ async function resolveSource(
     };
   }
 
-  // Package name provided - use name resolution
-  // Priority: CWD (if name matches) → Workspace → Global
-  // Skip registry (already immutable) and remote (not relevant)
-  const resolution = await resolvePackageByName({
-    cwd,
-    packageName,
-    checkCwd: true,           // Check if CWD is the package (highest priority)
-    searchWorkspace: true,    // Search workspace packages
-    searchGlobal: true,       // Search global packages
-    searchRegistry: false     // Skip registry (already packed/immutable)
-  });
+  // Classify the input to determine if it's a path, tarball, or package name
+  const classification = await classifyPackageInput(packageInput, cwd);
 
-  if (!resolution.found || !resolution.path) {
-    throw new Error(
-      `Package '${packageName}' not found.\n` +
-      `Searched: current directory, workspace packages (.openpackage/packages/), and global packages (~/.openpackage/packages/).\n` +
-      `Make sure the package exists in one of these locations.`
+  let packageRoot: string;
+
+  // Handle different input types
+  if (classification.type === 'directory') {
+    // Direct path to package directory
+    packageRoot = classification.resolvedPath!;
+    logger.info('Resolved package input as directory path', { path: packageRoot });
+  } else if (classification.type === 'tarball') {
+    // Tarball input is not supported for pack
+    throw new ValidationError(
+      `Pack command does not support tarball inputs.\n` +
+      `To pack from a tarball, first extract it to a directory.`
     );
+  } else if (classification.type === 'git') {
+    // Git input is not supported for pack
+    throw new ValidationError(
+      `Pack command does not support git inputs.\n` +
+      `To pack from a git repository, first clone it to a directory.`
+    );
+  } else {
+    // Registry type or package name - use name resolution
+    // Priority: CWD (if name matches) → Workspace → Global
+    // Skip registry (already immutable) and remote (not relevant)
+    const resolution = await resolvePackageByName({
+      cwd,
+      packageName: packageInput,
+      checkCwd: true,           // Check if CWD is the package (highest priority)
+      searchWorkspace: true,    // Search workspace packages
+      searchGlobal: true,       // Search global packages
+      searchRegistry: false     // Skip registry (already packed/immutable)
+    });
+
+    if (!resolution.found || !resolution.path) {
+      throw new Error(
+        `Package '${packageInput}' not found.\n` +
+        `Searched: current directory, workspace packages (.openpackage/packages/), and global packages (~/.openpackage/packages/).\n` +
+        `Make sure the package exists in one of these locations.`
+      );
+    }
+
+    packageRoot = resolution.path;
+
+    // Log resolution info for debugging/transparency
+    if (resolution.resolutionInfo) {
+      const { selected, reason } = resolution.resolutionInfo;
+      logger.info('Resolved package for packing', {
+        packageInput,
+        selectedSource: selected.type,
+        version: selected.version,
+        path: selected.path,
+        reason
+      });
+
+      // User-friendly message about where package was found
+      const sourceLabel = selected.type === 'cwd' ? 'current directory' :
+                         selected.type === 'workspace' ? 'workspace packages' :
+                         selected.type === 'global' ? 'global packages' : selected.type;
+      console.log(`✓ Found ${packageInput} in ${sourceLabel}`);
+    }
   }
 
   // Load manifest from resolved path
-  const manifestPath = path.join(resolution.path, FILE_PATTERNS.OPENPACKAGE_YML);
+  const manifestPath = path.join(packageRoot, FILE_PATTERNS.OPENPACKAGE_YML);
   if (!(await exists(manifestPath))) {
     throw new Error(`openpackage.yml not found at ${manifestPath}`);
   }
 
   const manifest = await parsePackageYml(manifestPath);
 
-  // Log resolution info for debugging/transparency
-  if (resolution.resolutionInfo) {
-    const { selected, reason } = resolution.resolutionInfo;
-    logger.info('Resolved package for packing', {
-      packageName,
-      selectedSource: selected.type,
-      version: selected.version,
-      path: selected.path,
-      reason
-    });
-
-    // User-friendly message about where package was found
-    const sourceLabel = selected.type === 'cwd' ? 'current directory' :
-                       selected.type === 'workspace' ? 'workspace packages' :
-                       selected.type === 'global' ? 'global packages' : selected.type;
-    console.log(`✓ Found ${packageName} in ${sourceLabel}`);
-  }
-
   return {
     name: manifest.name,
     version: manifest.version ?? '',
-    packageRoot: resolution.path,
+    packageRoot,
     manifest
   };
 }
@@ -96,13 +124,13 @@ export interface PackPipelineResult {
 }
 
 export async function runPackPipeline(
-  packageName: string | undefined,
+  packageInput: string | undefined,
   options: PackOptions = {}
 ): Promise<CommandResult<PackPipelineResult>> {
   const cwd = process.cwd();
 
   try {
-    const source = await resolveSource(cwd, packageName);
+    const source = await resolveSource(cwd, packageInput);
 
     if (!source.version || !semver.valid(source.version)) {
       return {
