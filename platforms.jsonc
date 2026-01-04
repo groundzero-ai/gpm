@@ -57,8 +57,7 @@
     "flows": [
       {
         "from": "AGENTS.md",
-        "to": "CLAUDE.md",
-        "when": { "exists": "CLAUDE.md" }
+        "to": "CLAUDE.md"
       },
       {
         "from": "rules/*.md",
@@ -200,8 +199,7 @@
     "flows": [
       {
         "from": "AGENTS.md",
-        "to": "QWEN.md",
-        "when": { "exists": "QWEN.md" }
+        "to": "QWEN.md"
       },
       {
         "from": "agents/*.md",
@@ -231,8 +229,7 @@
     "flows": [
       {
         "from": "AGENTS.md",
-        "to": "WARP.md",
-        "when": { "exists": "WARP.md" }
+        "to": "WARP.md"
       }
     ]
   },
