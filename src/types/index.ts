@@ -4,6 +4,10 @@
 
 import type { Platform } from '../core/platforms.js';
 
+// Re-export flow types
+export * from './flows.js';
+export * from './platform-flows.js';
+
 // Core application types
 export interface OpenPackageDirectories {
   config: string;

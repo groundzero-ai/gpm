@@ -2,53 +2,53 @@
 
 ## 1. Prerequisites and Setup
 
-- [ ] 1.1 Install new dependencies
-  - [ ] `@iarna/toml` for TOML parsing
-  - [ ] `jsonpath-plus` for JSONPath queries
-- [ ] 1.2 Create type definitions
-  - [ ] `src/types/flows.ts` - Flow, FlowConfig, Transform types
-  - [ ] `src/types/platform-flows.ts` - PlatformsConfig, MultiTargetFlows types
-- [ ] 1.3 Create JSON schema
-  - [ ] `schemas/platforms-v1.json` - JSON Schema for platforms.jsonc
-  - [ ] Include all flow fields and validation rules
-  - [ ] Add descriptions for IDE autocomplete
-  - [ ] Test schema with example configs
-- [ ] 1.4 Set up test infrastructure
-  - [ ] `tests/flows/` directory structure
-  - [ ] Test fixtures for each transform type
-  - [ ] Mock platform configurations
+- [x] 1.1 Install new dependencies
+  - [x] `@iarna/toml` for TOML parsing
+  - [x] `jsonpath-plus` for JSONPath queries
+- [x] 1.2 Create type definitions
+  - [x] `src/types/flows.ts` - Flow, FlowConfig, Transform types
+  - [x] `src/types/platform-flows.ts` - PlatformsConfig, MultiTargetFlows types
+- [x] 1.3 Create JSON schema
+  - [x] `schemas/platforms-v1.json` - JSON Schema for platforms.jsonc
+  - [x] Include all flow fields and validation rules
+  - [x] Add descriptions for IDE autocomplete
+  - [x] Test schema with example configs
+- [x] 1.4 Set up test infrastructure
+  - [x] `tests/flows/` directory structure
+  - [x] Test fixtures for each transform type
+  - [x] Mock platform configurations
 
 ## 2. Core Flow Engine
 
-- [ ] 2.1 Create flow executor (`src/core/flow-executor.ts`)
-  - [ ] `executeFlow(flow, sourceContent, context)` - Main execution function
-  - [ ] `loadSourceFile(from, context)` - Load and parse source files
-  - [ ] `writeTargetFile(to, content, context)` - Write transformed content
-  - [ ] `parseSourceContent(content, format)` - Auto-detect and parse formats
-  - [ ] `serializeTargetContent(content, format)` - Serialize to target format
-- [ ] 2.2 Implement execution pipeline
-  - [ ] Step 1: Load source file
-  - [ ] Step 2: Extract JSONPath (if specified)
-  - [ ] Step 3: Pick/omit keys
-  - [ ] Step 4: Map keys (with transforms)
-  - [ ] Step 5: Apply pipe transforms
-  - [ ] Step 6: Embed in target structure
-  - [ ] Step 7: Merge with existing target (priority-based)
-  - [ ] Step 8: Write to target file
-- [ ] 2.3 Add multi-target support
-  - [ ] Detect multi-target flows (object `to` field)
-  - [ ] Execute each target with specific transforms
-  - [ ] Parse source once, apply multiple transforms
-- [ ] 2.4 Add conditional execution
-  - [ ] `evaluateCondition(when, context)` - Evaluate when clauses
-  - [ ] Support `exists`, `platform`, `key`, `equals` conditions
-  - [ ] Support `and`, `or` composite conditions
-- [ ] 2.5 Error handling
-  - [ ] Clear error messages for each pipeline step
-  - [ ] Source file not found
-  - [ ] Parse errors with line numbers
-  - [ ] Transform failures with context
-  - [ ] Write permission errors
+- [x] 2.1 Create flow executor (`src/core/flows/flow-executor.ts`)
+  - [x] `executeFlow(flow, sourceContent, context)` - Main execution function
+  - [x] `loadSourceFile(from, context)` - Load and parse source files
+  - [x] `writeTargetFile(to, content, context)` - Write transformed content
+  - [x] `parseSourceContent(content, format)` - Auto-detect and parse formats
+  - [x] `serializeTargetContent(content, format)` - Serialize to target format
+- [x] 2.2 Implement execution pipeline
+  - [x] Step 1: Load source file
+  - [x] Step 2: Extract JSONPath (if specified)
+  - [x] Step 3: Pick/omit keys
+  - [x] Step 4: Map keys (with transforms)
+  - [x] Step 5: Apply pipe transforms (stub - will be implemented in section 3)
+  - [x] Step 6: Embed in target structure
+  - [x] Step 7: Merge with existing target (priority-based)
+  - [x] Step 8: Write to target file
+- [x] 2.3 Add multi-target support
+  - [x] Detect multi-target flows (object `to` field)
+  - [x] Execute each target with specific transforms
+  - [x] Parse source once, apply multiple transforms
+- [x] 2.4 Add conditional execution
+  - [x] `evaluateCondition(when, context)` - Evaluate when clauses
+  - [x] Support `exists`, `platform`, `key`, `equals` conditions
+  - [x] Support `and`, `or`, `not` composite conditions
+- [x] 2.5 Error handling
+  - [x] Clear error messages for each pipeline step
+  - [x] Source file not found
+  - [x] Parse errors with line numbers
+  - [x] Transform failures with context
+  - [x] Write permission errors
 
 ## 3. Transform Implementations
 

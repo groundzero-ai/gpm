@@ -1,0 +1,104 @@
+{
+  // Simple platform configuration for testing flows
+  "test-platform": {
+    "name": "Test Platform",
+    "rootDir": ".test",
+    "rootFile": "TEST.md",
+    "flows": [
+      {
+        "from": "rules/{name}.md",
+        "to": ".test/rules/{name}.md",
+        "description": "Simple file copy for rules"
+      },
+      {
+        "from": "commands/{name}.md",
+        "to": ".test/commands/{name}.md"
+      }
+    ]
+  },
+
+  "test-transforms": {
+    "name": "Test Transforms Platform",
+    "rootDir": ".test-transforms",
+    "flows": [
+      {
+        "from": "config.jsonc",
+        "to": ".test-transforms/config.json",
+        "pipe": ["filter-comments"],
+        "description": "Test comment filtering"
+      },
+      {
+        "from": "settings.yaml",
+        "to": ".test-transforms/settings.json",
+        "description": "Test YAML to JSON conversion"
+      },
+      {
+        "from": "data.json",
+        "to": ".test-transforms/data.yaml",
+        "description": "Test JSON to YAML conversion"
+      }
+    ]
+  },
+
+  "test-keymapping": {
+    "name": "Test Key Mapping Platform",
+    "rootDir": ".test-keymapping",
+    "flows": [
+      {
+        "from": "config.json",
+        "to": ".test-keymapping/mapped.json",
+        "map": {
+          "oldKey": "newKey",
+          "nested.value": "flat_value",
+          "theme": {
+            "to": "appearance.theme",
+            "default": "dark"
+          }
+        },
+        "description": "Test key mapping"
+      }
+    ]
+  },
+
+  "test-multitarget": {
+    "name": "Test Multi-Target Platform",
+    "rootDir": ".test-multi",
+    "flows": [
+      {
+        "from": "mcp.jsonc",
+        "to": {
+          ".test-multi/mcp.json": {
+            "pipe": ["filter-comments"],
+            "merge": "deep"
+          },
+          ".test-multi/mcp.yaml": {
+            "description": "YAML version"
+          }
+        },
+        "description": "Test multi-target flows"
+      }
+    ]
+  },
+
+  "test-conditional": {
+    "name": "Test Conditional Platform",
+    "rootDir": ".test-conditional",
+    "flows": [
+      {
+        "from": "optional.md",
+        "to": ".test-conditional/optional.md",
+        "when": {
+          "exists": "optional.md"
+        },
+        "description": "Test conditional flow"
+      },
+      {
+        "from": "platform-specific.md",
+        "to": ".test-conditional/platform-specific.md",
+        "when": {
+          "platform": "test-conditional"
+        }
+      }
+    ]
+  }
+}

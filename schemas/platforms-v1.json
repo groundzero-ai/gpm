@@ -1,0 +1,416 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openpackage.dev/schemas/platforms-v1.json",
+  "title": "OpenPackage Platforms Configuration",
+  "description": "Platform definitions for OpenPackage CLI, supporting both flow-based and legacy subdirs configurations",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/definitions/platformConfig"
+  },
+  "definitions": {
+    "platformConfig": {
+      "type": "object",
+      "description": "Configuration for a single platform",
+      "required": ["name", "rootDir"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name of the platform"
+        },
+        "rootDir": {
+          "type": "string",
+          "description": "Platform root directory (e.g., '.cursor', '.claude')",
+          "pattern": "^\\."
+        },
+        "rootFile": {
+          "type": "string",
+          "description": "Optional root file for platform detection (e.g., 'AGENTS.md')"
+        },
+        "aliases": {
+          "type": "array",
+          "description": "Alternative names for the platform",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the platform is enabled (default: true)",
+          "default": true
+        },
+        "flows": {
+          "type": "array",
+          "description": "Flow-based transformation definitions",
+          "items": {
+            "$ref": "#/definitions/flow"
+          }
+        },
+        "subdirs": {
+          "type": "array",
+          "description": "Legacy subdirectory mappings (deprecated, use flows instead)",
+          "items": {
+            "$ref": "#/definitions/subdirConfig"
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Platform description for documentation"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Custom variables for flow template substitution",
+          "additionalProperties": true
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "description": "Defines a transformation from source to target",
+      "required": ["from", "to"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Source file pattern (supports {name} placeholders)"
+        },
+        "to": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Single target path"
+            },
+            {
+              "type": "object",
+              "description": "Multi-target configuration",
+              "additionalProperties": {
+                "$ref": "#/definitions/multiTargetFlowConfig"
+              }
+            }
+          ]
+        },
+        "pipe": {
+          "type": "array",
+          "description": "Transform pipeline - array of transform names to apply in order",
+          "items": {
+            "type": "string"
+          }
+        },
+        "map": {
+          "type": "object",
+          "description": "Key mapping configuration - rename and transform keys",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Simple key rename (target key path)"
+              },
+              {
+                "$ref": "#/definitions/keyMapConfig"
+              }
+            ]
+          }
+        },
+        "pick": {
+          "type": "array",
+          "description": "Keys to include (whitelist)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "omit": {
+          "type": "array",
+          "description": "Keys to exclude (blacklist)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path": {
+          "type": "string",
+          "description": "JSONPath expression to extract subset of data"
+        },
+        "embed": {
+          "type": "string",
+          "description": "Embed content under this key in the target"
+        },
+        "section": {
+          "type": "string",
+          "description": "TOML section name (for TOML targets)"
+        },
+        "when": {
+          "$ref": "#/definitions/condition",
+          "description": "Conditional execution"
+        },
+        "merge": {
+          "type": "string",
+          "enum": ["deep", "shallow", "replace", "append"],
+          "description": "Merge strategy when target exists (default: 'replace')",
+          "default": "replace"
+        },
+        "handler": {
+          "type": "string",
+          "description": "Custom handler name for edge cases"
+        },
+        "priority": {
+          "type": "number",
+          "description": "Priority for conflict resolution (higher = wins, default: 0)",
+          "default": 0
+        },
+        "description": {
+          "type": "string",
+          "description": "Flow description for documentation/debugging"
+        }
+      }
+    },
+    "multiTargetFlowConfig": {
+      "type": "object",
+      "description": "Configuration for a single target in a multi-target flow",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this target is enabled (default: true)",
+          "default": true
+        },
+        "pipe": {
+          "type": "array",
+          "description": "Transform pipeline overrides",
+          "items": {
+            "type": "string"
+          }
+        },
+        "map": {
+          "type": "object",
+          "description": "Key mapping overrides",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/definitions/keyMapConfig"
+              }
+            ]
+          }
+        },
+        "pick": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "omit": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path": {
+          "type": "string"
+        },
+        "embed": {
+          "type": "string"
+        },
+        "section": {
+          "type": "string"
+        },
+        "merge": {
+          "type": "string",
+          "enum": ["deep", "shallow", "replace", "append"]
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "keyMapConfig": {
+      "type": "object",
+      "description": "Advanced key mapping with transformations and defaults",
+      "required": ["to"],
+      "properties": {
+        "to": {
+          "type": "string",
+          "description": "Target key path (supports dot notation)"
+        },
+        "transform": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Single transform name"
+            },
+            {
+              "type": "array",
+              "description": "Array of transform names to apply in order",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "default": {
+          "description": "Default value if source key is missing"
+        },
+        "values": {
+          "type": "object",
+          "description": "Value lookup table - map source values to target values",
+          "additionalProperties": true
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether to remove the key if value is undefined/null",
+          "default": false
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "description": "Conditions for flow execution",
+      "properties": {
+        "exists": {
+          "type": "string",
+          "description": "File or directory must exist"
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform must be enabled"
+        },
+        "key": {
+          "type": "string",
+          "description": "Key must exist in source data"
+        },
+        "equals": {
+          "description": "Key must equal specific value"
+        },
+        "and": {
+          "type": "array",
+          "description": "All conditions must be true",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        "or": {
+          "type": "array",
+          "description": "Any condition must be true",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        "not": {
+          "$ref": "#/definitions/condition",
+          "description": "Condition must be false"
+        }
+      }
+    },
+    "subdirConfig": {
+      "type": "object",
+      "description": "Legacy subdirectory mapping (deprecated)",
+      "required": ["universalDir", "platformDir"],
+      "properties": {
+        "universalDir": {
+          "type": "string",
+          "description": "Universal directory name (e.g., 'rules', 'commands')"
+        },
+        "platformDir": {
+          "type": "string",
+          "description": "Platform-specific directory name"
+        },
+        "exts": {
+          "type": "array",
+          "description": "Allowed file extensions (undefined = all, [] = none)",
+          "items": {
+            "type": "string",
+            "pattern": "^\\."
+          }
+        },
+        "transformations": {
+          "type": "array",
+          "description": "Extension transformations",
+          "items": {
+            "$ref": "#/definitions/extensionTransformation"
+          }
+        }
+      }
+    },
+    "extensionTransformation": {
+      "type": "object",
+      "description": "Extension transformation between package and workspace",
+      "required": ["packageExt", "workspaceExt"],
+      "properties": {
+        "packageExt": {
+          "type": "string",
+          "description": "Package (registry) extension",
+          "pattern": "^\\."
+        },
+        "workspaceExt": {
+          "type": "string",
+          "description": "Workspace extension",
+          "pattern": "^\\."
+        }
+      }
+    },
+    "globalConfig": {
+      "type": "object",
+      "description": "Global flows configuration",
+      "properties": {
+        "flows": {
+          "type": "array",
+          "description": "Global flows applied before platform-specific flows",
+          "items": {
+            "$ref": "#/definitions/flow"
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Configuration description"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "cursor": {
+        "name": "Cursor",
+        "rootDir": ".cursor",
+        "rootFile": "AGENTS.md",
+        "flows": [
+          {
+            "from": "rules/{name}.md",
+            "to": ".cursor/rules/{name}.mdc",
+            "description": "Transform rules to .mdc format"
+          },
+          {
+            "from": "commands/{name}.md",
+            "to": ".cursor/commands/{name}.md"
+          },
+          {
+            "from": "mcp.jsonc",
+            "to": ".cursor/mcp.json",
+            "pipe": ["filter-comments"],
+            "merge": "deep"
+          }
+        ]
+      },
+      "claude": {
+        "name": "Claude Code",
+        "rootDir": ".claude",
+        "rootFile": "CLAUDE.md",
+        "aliases": ["claudecode"],
+        "flows": [
+          {
+            "from": "rules/{name}.md",
+            "to": ".claude/rules/{name}.md"
+          },
+          {
+            "from": "agents/{name}.md",
+            "to": ".claude/agents/{name}.md",
+            "pipe": ["frontmatter"],
+            "map": {
+              "title": "name",
+              "tags": {
+                "to": "categories",
+                "transform": "array-unique"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
