@@ -442,8 +442,13 @@ export function getGlobalFlows(cwd?: string): Flow[] | undefined {
  * Check if a platform uses flow-based configuration
  */
 export function platformUsesFlows(platform: Platform, cwd?: string): boolean {
-  const def = getPlatformDefinition(platform, cwd)
-  return def.flows !== undefined && def.flows.length > 0
+  try {
+    const def = getPlatformDefinition(platform, cwd)
+    return def.flows !== undefined && def.flows.length > 0
+  } catch (error) {
+    // Platform not found - return false
+    return false
+  }
 }
 
 /**

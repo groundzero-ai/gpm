@@ -32,7 +32,8 @@ const testFiles: string[] = [
   'tests/status.test.ts',
   'tests/uninstall.test.ts',
   'tests/immutable-save-add-errors.test.ts',
-  'tests/flows/integration/flow-install-pipeline.test.ts'
+  'tests/flows/integration/flow-install-pipeline.test.ts',
+  'tests/save-apply-flows.test.ts'
 ];
 
 function runTestFile(relPath: string): void {

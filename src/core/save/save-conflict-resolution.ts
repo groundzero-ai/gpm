@@ -30,6 +30,12 @@ import {
 import { pruneExistingPlatformCandidates as pruneWorkspaceCandidatesWithLocalPlatformVariants } from './save-platform-handler.js';
 import { readPackageFilesForRegistry } from '../../utils/package-copy.js';
 import { composeMarkdown } from '../../utils/markdown-frontmatter.js';
+import { 
+  saveWorkspaceFilesWithFlows, 
+  shouldUseFlowsForSave,
+  getFlowSaveStatistics 
+} from './flow-based-saver.js';
+import { getDetectedPlatforms } from '../platforms.js';
 
 export interface SaveConflictResolutionOptions {
   force?: boolean;
@@ -49,7 +55,7 @@ export async function resolvePackageFilesWithConflicts(
 
   const [
     localPlatformCandidates,
-    workspacePlatformCandidates,
+    initialWorkspacePlatformCandidates,
     localRootCandidates,
     workspaceRootCandidates
   ] = await Promise.all([
@@ -59,7 +65,45 @@ export async function resolvePackageFilesWithConflicts(
     discoverWorkspaceRootSaveCandidates(cwd, packageContext.config.name)
   ]);
 
+  let workspacePlatformCandidates = initialWorkspacePlatformCandidates;
+
   const localCandidates = [...localPlatformCandidates, ...localRootCandidates];
+
+  // Try flow-based save for platforms that support it
+  const detectedPlatforms = await getDetectedPlatforms(cwd);
+  const hasFlowPlatforms = detectedPlatforms.some(p => shouldUseFlowsForSave(p, cwd));
+  
+  if (hasFlowPlatforms) {
+    logger.debug(`Attempting flow-based save for ${workspacePlatformCandidates.length} workspace files`);
+    
+    const flowResult = await saveWorkspaceFilesWithFlows(
+      workspacePlatformCandidates,
+      packageRootDir,
+      cwd,
+      { force: options.force, dryRun: false }
+    );
+    
+    const stats = getFlowSaveStatistics(flowResult);
+    logger.debug(
+      `Flow-based save: ${stats.written} written, ${stats.skipped} skipped, ${stats.errors} errors`
+    );
+    
+    // Remove successfully processed files from workspace candidates
+    // so they don't go through legacy conflict resolution
+    const processedPaths = new Set(
+      flowResult.fileResults
+        .filter(r => r.success && !r.skipped)
+        .map(r => r.sourceWorkspacePath)
+    );
+    
+    workspacePlatformCandidates = workspacePlatformCandidates.filter(
+      c => !processedPaths.has(c.fullPath)
+    );
+    
+    logger.debug(
+      `${processedPaths.size} files processed by flows, ${workspacePlatformCandidates.length} remaining for legacy save`
+    );
+  }
 
   const indexRecord = await readPackageIndex(cwd, packageContext.config.name, packageContext.location);
 

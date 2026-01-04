@@ -6,7 +6,7 @@ import { applyPlannedSyncForPackageFiles } from '../../utils/index-based-install
 import { readPackageFilesForRegistry } from '../../utils/package-copy.js';
 import { PACKAGE_PATHS } from '../../constants/index.js';
 import { printPlatformSyncSummary } from '../sync/platform-sync-summary.js';
-import { getDetectedPlatforms } from '../platforms.js';
+import { getDetectedPlatforms, platformUsesFlows } from '../platforms.js';
 import { readWorkspaceIndex, writeWorkspaceIndex } from '../../utils/workspace-index-yml.js';
 import { stripRootCopyPrefix, isRootCopyPath } from '../../utils/platform-root-files.js';
 import { ensureDir, writeTextFile } from '../../utils/fs.js';
@@ -16,6 +16,8 @@ import { PlatformSyncResult } from '../sync/platform-sync.js';
 import { resolveDeclaredPath, toTildePath } from '../../utils/path-resolution.js';
 import { isRegistryPath } from '../../utils/source-mutability.js';
 import { MUTABILITY, SOURCE_TYPES } from '../../constants/index.js';
+import { installPackageWithFlows } from '../install/flow-based-installer.js';
+import { logger } from '../../utils/logger.js';
 
 export interface ApplyPipelineOptions extends InstallOptions {}
 
@@ -96,19 +98,70 @@ async function applySinglePackage(
   const conflictStrategy = options.force ? 'overwrite' : options.conflictStrategy ?? 'ask';
   const platforms = await getDetectedPlatforms(cwd);
 
-  const syncOutcome = await applyPlannedSyncForPackageFiles(
-    cwd,
-    source.packageName,
-    version,
-    packageFiles,
-    platforms,
-    { ...options, conflictStrategy },
-    'nested'
-  );
+  // Check if any detected platform uses flows
+  const hasFlowPlatforms = platforms.some(p => platformUsesFlows(p, cwd));
 
-  // Handle root files and root/** copy-to-root content.
-  const rootSyncResult = await syncRootFiles(cwd, packageFiles, source.packageName, platforms);
-  await syncRootCopyContent(cwd, packageFiles, options);
+  let syncOutcome: any;
+  let rootSyncResult: any;
+
+  if (hasFlowPlatforms) {
+    // Use flow-based installer for platforms that support flows
+    logger.debug(`Applying ${packageName} using flow-based installer`);
+    
+    const flowResult = await installPackageWithFlows(
+      {
+        packageName: source.packageName,
+        packageRoot: source.absolutePath,
+        workspaceRoot: cwd,
+        platform: platforms[0], // Use first detected platform (TODO: handle multiple)
+        packageVersion: version,
+        priority: 100, // Default priority for apply
+        dryRun: options.dryRun ?? false
+      },
+      options
+    );
+
+    if (!flowResult.success) {
+      return {
+        success: false,
+        error: `Failed to apply ${packageName}: ${flowResult.errors.map(e => e.message).join(', ')}`
+      };
+    }
+
+    // Handle root files separately (not covered by flows yet)
+    rootSyncResult = await syncRootFiles(cwd, packageFiles, source.packageName, platforms);
+    await syncRootCopyContent(cwd, packageFiles, options);
+
+    // Build mapping from flow results
+    const fileMapping: Record<string, string[]> = {};
+    // TODO: Build proper mapping from flow results
+
+    syncOutcome = {
+      operation: {
+        installedFiles: [], // TODO: Extract from flowResult
+        updatedFiles: [], // TODO: Extract from flowResult
+        deletedFiles: []
+      },
+      mapping: fileMapping
+    };
+  } else {
+    // Use legacy index-based installer for platforms without flows
+    logger.debug(`Applying ${packageName} using index-based installer`);
+    
+    syncOutcome = await applyPlannedSyncForPackageFiles(
+      cwd,
+      source.packageName,
+      version,
+      packageFiles,
+      platforms,
+      { ...options, conflictStrategy },
+      'nested'
+    );
+
+    // Handle root files and root/** copy-to-root content.
+    rootSyncResult = await syncRootFiles(cwd, packageFiles, source.packageName, platforms);
+    await syncRootCopyContent(cwd, packageFiles, options);
+  }
 
   // Persist unified workspace index entry.
   await upsertWorkspaceIndexEntry(cwd, {

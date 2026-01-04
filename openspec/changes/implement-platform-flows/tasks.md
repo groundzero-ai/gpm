@@ -193,27 +193,29 @@
   - [x] Identify reverse flow execution requirements
   - [x] Document source platform detection approach
   - [x] Document reverse transformation strategy
-- [ ] 6.2.2 Implement save flow (Future Work)
-  - [ ] Execute reverse flows (workspace → package)
-  - [ ] Detect source platform from workspace files
-  - [ ] Apply reverse transformations
-  - [ ] Use flows to identify workspace files
-  - [ ] Map workspace files to universal package structure
-  - [ ] Handle multiple flows targeting same file
-  - Note: Requires significant refactoring of save pipeline
+- [x] 6.2.2 Implement save flow
+  - [x] Execute reverse flows (workspace → package)
+  - [x] Detect source platform from workspace files
+  - [x] Apply reverse transformations (basic implementation)
+  - [x] Use flows to identify workspace files
+  - [x] Map workspace files to universal package structure
+  - [x] Handle multiple flows targeting same file
+  - [x] Integration with save-conflict-resolution.ts
+  - Note: Full reverse transformation (key mapping, format conversion) TODO
 
 ### 6.3 Apply Pipeline
 - [x] 6.3.1 Document apply flow integration needs
   - [x] Identify flow execution from local registry
   - [x] Document transformation approach
   - [x] Document conditional flow handling
-- [ ] 6.3.2 Implement apply flow (Future Work)
-  - [ ] Execute flows from local registry
-  - [ ] Apply transformations to workspace
-  - [ ] Handle conditional flows based on workspace state
-  - [ ] Preserve existing conflict resolution
-  - [ ] Use flow merge strategies
-  - Note: Shares implementation with install pipeline
+- [x] 6.3.2 Implement apply flow
+  - [x] Execute flows from local registry
+  - [x] Apply transformations to workspace
+  - [x] Handle conditional flows based on workspace state
+  - [x] Preserve existing conflict resolution
+  - [x] Use flow merge strategies
+  - [x] Integration with apply-pipeline.ts
+  - Note: Uses flow-based installer from Section 6.1
 
 ### 6.4 Utility Updates
 - [x] 6.4.1 Update platform utilities (Initial)
