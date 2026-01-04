@@ -1,47 +1,59 @@
 {
-  // Example: Custom platform configuration with extended subdirectories
+  // Example: Custom platform configuration with flows
   // Place this in ~/.openpackage/platforms.jsonc (global) or
   // <workspace>/.openpackage/platforms.jsonc (local) to extend built-in platforms
 
-  // Extend Cursor with custom subdirs
+  // Extend Cursor with custom flows
   "cursor": {
     "name": "Cursor",
     "rootDir": ".cursor",
     "rootFile": "AGENTS.md",
-    "subdirs": [
-      // Standard subdirs
+    "flows": [
+      // Standard flows
       {
-        "universalDir": "rules",
-        "platformDir": "rules",
-        "exts": [".mdc", ".md"],
-        "transformations": [
-          {
-            "packageExt": ".md",
-            "workspaceExt": ".mdc"
-          }
-        ]
+        "from": "rules/*.md",
+        "to": ".cursor/rules/*.mdc"
       },
       {
-        "universalDir": "commands",
-        "platformDir": "commands",
-        "exts": [".md"]
+        "from": "commands/*.md",
+        "to": ".cursor/commands/*.md"
       },
       
-      // Custom subdirs - extend with your own!
+      // Custom flows - extend with your own!
       {
-        "universalDir": "memories",
-        "platformDir": "context",
-        "exts": [".json", ".md"]
+        "from": "memories/*.json",
+        "to": ".cursor/context/*.json"
       },
       {
-        "universalDir": "tools",
-        "platformDir": "tools",
-        "exts": [".ts", ".js", ".py"]
+        "from": "memories/*.md",
+        "to": ".cursor/context/*.md"
       },
       {
-        "universalDir": "templates",
-        "platformDir": "templates",
-        "exts": [".md", ".hbs"]
+        "from": "tools/*.ts",
+        "to": ".cursor/tools/*.ts"
+      },
+      {
+        "from": "tools/*.js",
+        "to": ".cursor/tools/*.js"
+      },
+      {
+        "from": "tools/*.py",
+        "to": ".cursor/tools/*.py"
+      },
+      {
+        "from": "templates/*.md",
+        "to": ".cursor/templates/*.md"
+      },
+      {
+        "from": "templates/*.hbs",
+        "to": ".cursor/templates/*.hbs"
+      },
+      
+      // Advanced: Configuration with merge
+      {
+        "from": "config.json",
+        "to": ".cursor/config.json",
+        "merge": "deep"
       }
     ]
   },
@@ -51,26 +63,43 @@
     "name": "My AI Platform",
     "rootDir": ".myai",
     "rootFile": "MYAI.md",
-    "subdirs": [
+    "flows": [
       {
-        "universalDir": "prompts",
-        "platformDir": "prompts",
-        "exts": [".md", ".txt"]
+        "from": "AGENTS.md",
+        "to": "MYAI.md",
+        "when": { "exists": "MYAI.md" }
       },
       {
-        "universalDir": "workflows",
-        "platformDir": "flows",
-        "exts": [".yml", ".yaml"]
+        "from": "prompts/*.md",
+        "to": ".myai/prompts/*.md"
       },
       {
-        "universalDir": "functions",
-        "platformDir": "functions",
-        "exts": [".js", ".ts"]
+        "from": "prompts/*.txt",
+        "to": ".myai/prompts/*.txt"
       },
       {
-        "universalDir": "datasets",
-        "platformDir": "data",
-        "exts": [".json", ".csv"]
+        "from": "workflows/*.yml",
+        "to": ".myai/flows/*.yml"
+      },
+      {
+        "from": "workflows/*.yaml",
+        "to": ".myai/flows/*.yaml"
+      },
+      {
+        "from": "functions/*.js",
+        "to": ".myai/functions/*.js"
+      },
+      {
+        "from": "functions/*.ts",
+        "to": ".myai/functions/*.ts"
+      },
+      {
+        "from": "datasets/*.json",
+        "to": ".myai/data/*.json"
+      },
+      {
+        "from": "datasets/*.csv",
+        "to": ".myai/data/*.csv"
       }
     ]
   },
@@ -79,11 +108,49 @@
   "lightweight-ai": {
     "name": "Lightweight AI",
     "rootDir": ".lightweight",
-    "subdirs": [
+    "flows": [
       {
-        "universalDir": "instructions",
-        "platformDir": "prompts"
-        // No exts specified = all extensions allowed
+        "from": "instructions/*",
+        "to": ".lightweight/prompts/*"
+      }
+    ]
+  },
+
+  // Example: Platform with format conversion
+  "config-converter": {
+    "name": "Config Converter",
+    "rootDir": ".converter",
+    "flows": [
+      {
+        "from": "config.yaml",
+        "to": ".converter/config.json",
+        "pipe": ["yaml-to-json"]
+      },
+      {
+        "from": "settings.jsonc",
+        "to": ".converter/settings.json",
+        "pipe": ["filter-comments"]
+      }
+    ]
+  },
+
+  // Example: Platform with key remapping
+  "advanced-platform": {
+    "name": "Advanced Platform",
+    "rootDir": ".advanced",
+    "flows": [
+      {
+        "from": "config.json",
+        "to": ".advanced/settings.json",
+        "map": {
+          "fontSize": {
+            "to": "editor.fontSize",
+            "transform": "number"
+          },
+          "theme": {
+            "to": "workbench.colorTheme"
+          }
+        }
       }
     ]
   }

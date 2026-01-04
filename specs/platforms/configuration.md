@@ -172,7 +172,7 @@ built-in config
   "cursor": {
     "flows": [
       // Completely replaces built-in flows
-      { "from": "rules/{name}.md", "to": ".cursor/custom/{name}.md" }
+      { "from": "rules/*.md", "to": ".cursor/custom/*.md" }
     ]
   }
 }
@@ -305,8 +305,8 @@ Customize a built-in platform for all projects:
   "cursor": {
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor/my-rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor/my-rules/*.mdc"
       }
     ]
   }
@@ -323,7 +323,7 @@ Override for specific project:
   "cursor": {
     "rootDir": ".cursor-custom",  // Non-standard directory
     "flows": [
-      { "from": "rules/{name}.md", "to": ".cursor-custom/rules/{name}.md" }
+      { "from": "rules/*.md", "to": ".cursor-custom/rules/*.md" }
     ]
   }
 }
@@ -341,8 +341,8 @@ Add support for proprietary platform:
     "rootDir": ".myai",
     "rootFile": "MYAI.md",
     "flows": [
-      { "from": "rules/{name}.md", "to": ".myai/prompts/{name}.md" },
-      { "from": "agents/{name}.md", "to": ".myai/assistants/{name}.yaml" }
+      { "from": "rules/*.md", "to": ".myai/prompts/*.md" },
+      { "from": "agents/*.md", "to": ".myai/assistants/*.yaml" }
     ]
   }
 }
@@ -409,8 +409,8 @@ mkdir .myplatform
     "rootDir": ".myplatform",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".myplatform/rules/{name}.md"
+        "from": "rules/*.md",
+        "to": ".myplatform/rules/*.md"
       }
     ]
   }
@@ -440,7 +440,7 @@ Begin with minimal flows and add complexity incrementally:
 ```jsonc
 {
   "flows": [
-    { "from": "rules/{name}.md", "to": ".platform/rules/{name}.md" }
+    { "from": "rules/*.md", "to": ".platform/rules/*.md" }
   ]
 }
 ```
@@ -527,9 +527,9 @@ opkg status  # Shows detected platforms
   "cursor": {
     "flows": [
       // Copy built-in flows here
-      { "from": "rules/{name}.md", "to": ".cursor/rules/{name}.mdc" },
+      { "from": "rules/*.md", "to": ".cursor/rules/*.mdc" },
       // Add your custom flow
-      { "from": "custom/{name}.md", "to": ".cursor/custom/{name}.md" }
+      { "from": "custom/*.md", "to": ".cursor/custom/*.md" }
     ]
   }
 }

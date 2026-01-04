@@ -30,8 +30,8 @@ opkg install @username/cursor-rules
   "cursor": {
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor/rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor/rules/*.mdc"
       }
     ]
   }
@@ -244,8 +244,8 @@ tabSize: 2
   "claude": {
     "flows": [
       {
-        "from": "agents/{name}.md",
-        "to": ".claude/agents/{name}.md",
+        "from": "agents/*.md",
+        "to": ".claude/agents/*.md",
         "map": {
           "role": "type",
           "model": {
@@ -481,14 +481,14 @@ Executes if **any** of the platforms are detected.
     "flows": [
       // Rules with extension change
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor/rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor/rules/*.mdc"
       },
       
       // Commands (no change)
       {
-        "from": "commands/{name}.md",
-        "to": ".cursor/commands/{name}.md"
+        "from": "commands/*.md",
+        "to": ".cursor/commands/*.md"
       },
       
       // MCP with namespacing
@@ -526,20 +526,21 @@ Executes if **any** of the platforms are detected.
     "flows": [
       // Root file
       {
-        "from": "CLAUDE.md",
-        "to": "CLAUDE.md"
+        "from": "AGENTS.md",
+        "to": "CLAUDE.md",
+        "when": { "exists": "CLAUDE.md" }
       },
       
       // Rules
       {
-        "from": "rules/{name}.md",
-        "to": ".claude/rules/{name}.md"
+        "from": "rules/*.md",
+        "to": ".claude/rules/*.md"
       },
       
       // Agents with frontmatter transform
       {
-        "from": "agents/{name}.md",
-        "to": ".claude/agents/{name}.md",
+        "from": "agents/*.md",
+        "to": ".claude/agents/*.md",
         "map": {
           "role": "type",
           "model": {
@@ -552,8 +553,8 @@ Executes if **any** of the platforms are detected.
       
       // Skills
       {
-        "from": "skills/{name}.md",
-        "to": ".claude/skills/{name}.md"
+        "from": "skills/*.md",
+        "to": ".claude/skills/*.md"
       }
     ]
   }
@@ -567,8 +568,7 @@ Executes if **any** of the platforms are detected.
   "global": {
     "flows": [
       // Universal files
-      { "from": "AGENTS.md", "to": "AGENTS.md" },
-      { "from": "README.md", "to": "README.md" }
+      { "from": "AGENTS.md", "to": "AGENTS.md", "when": { "exists": "AGENTS.md" } }
     ]
   },
   
@@ -576,7 +576,7 @@ Executes if **any** of the platforms are detected.
     "name": "Cursor",
     "rootDir": ".cursor",
     "flows": [
-      { "from": "rules/{name}.md", "to": ".cursor/rules/{name}.mdc" },
+      { "from": "rules/*.md", "to": ".cursor/rules/*.mdc" },
       {
         "from": "mcp.jsonc",
         "to": ".cursor/mcp.json",
@@ -591,9 +591,9 @@ Executes if **any** of the platforms are detected.
     "rootDir": ".claude",
     "rootFile": "CLAUDE.md",
     "flows": [
-      { "from": "CLAUDE.md", "to": "CLAUDE.md" },
-      { "from": "rules/{name}.md", "to": ".claude/rules/{name}.md" },
-      { "from": "agents/{name}.md", "to": ".claude/agents/{name}.md" }
+      { "from": "AGENTS.md", "to": "CLAUDE.md", "when": { "exists": "CLAUDE.md" } },
+      { "from": "rules/*.md", "to": ".claude/rules/*.md" },
+      { "from": "agents/*.md", "to": ".claude/agents/*.md" }
     ]
   },
   
@@ -601,7 +601,7 @@ Executes if **any** of the platforms are detected.
     "name": "Windsurf",
     "rootDir": ".windsurf",
     "flows": [
-      { "from": "rules/{name}.md", "to": ".windsurf/rules/{name}.md" }
+      { "from": "rules/*.md", "to": ".windsurf/rules/*.md" }
     ]
   }
 }
@@ -619,16 +619,23 @@ Executes if **any** of the platforms are detected.
     "rootDir": ".myai",
     "rootFile": "MYAI.md",
     "flows": [
+      // Root file
+      {
+        "from": "AGENTS.md",
+        "to": "MYAI.md",
+        "when": { "exists": "MYAI.md" }
+      },
+      
       // Rules → prompts
       {
-        "from": "rules/{name}.md",
-        "to": ".myai/prompts/{name}.md"
+        "from": "rules/*.md",
+        "to": ".myai/prompts/*.md"
       },
       
       // Agents → assistants with format conversion
       {
-        "from": "agents/{name}.md",
-        "to": ".myai/assistants/{name}.yaml"
+        "from": "agents/*.md",
+        "to": ".myai/assistants/*.yaml"
       },
       
       // Config with custom structure
@@ -652,14 +659,14 @@ Executes if **any** of the platforms are detected.
     "flows": [
       // Custom directory structure
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor/custom-rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor/custom-rules/*.mdc"
       },
       
       // Additional transform
       {
-        "from": "custom/{name}.jsonc",
-        "to": ".cursor/custom/{name}.json",
+        "from": "custom/*.jsonc",
+        "to": ".cursor/custom/*.json",
         "pick": ["public"],
         "merge": "deep"
       }
@@ -743,8 +750,8 @@ DEBUG=opkg:flows opkg install @user/package
   "cursor": {
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor/company-rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor/company-rules/*.mdc"
       }
     ]
   }
@@ -762,8 +769,8 @@ DEBUG=opkg:flows opkg install @user/package
     "rootDir": ".cursor-workspace",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor-workspace/shared-rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor-workspace/shared-rules/*.mdc"
       }
     ]
   }
@@ -832,8 +839,8 @@ DEBUG=opkg:flows opkg install @user/package
 Begin with basic flows:
 ```jsonc
 {
-  "from": "rules/{name}.md",
-  "to": ".cursor/rules/{name}.md"
+  "from": "rules/*.md",
+  "to": ".cursor/rules/*.md"
 }
 ```
 

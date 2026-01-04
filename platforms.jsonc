@@ -7,8 +7,8 @@
     "flows": [
       {
         "from": "AGENTS.md",
-        "to": "{rootFile}",
-        "when": { "exists": "{rootFile}" }
+        "to": "AGENTS.md",
+        "when": { "exists": "AGENTS.md" }
       }
     ]
   },
@@ -22,12 +22,12 @@
     "description": "Google's AI coding agent platform",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".agent/rules/{name}.md"
+        "from": "rules/*.md",
+        "to": ".agent/rules/*.md"
       },
       {
-        "from": "commands/{name}.md",
-        "to": ".agent/workflows/{name}.md"
+        "from": "commands/*.md",
+        "to": ".agent/workflows/*.md"
       }
     ]
   },
@@ -38,12 +38,12 @@
     "description": "Augment AI code assistant",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".augment/rules/{name}.md"
+        "from": "rules/*.md",
+        "to": ".augment/rules/*.md"
       },
       {
-        "from": "commands/{name}.md",
-        "to": ".augment/commands/{name}.md"
+        "from": "commands/*.md",
+        "to": ".augment/commands/*.md"
       }
     ]
   },
@@ -56,20 +56,25 @@
     "description": "Anthropic Claude coding assistant with agents and skills",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".claude/rules/{name}.md"
+        "from": "AGENTS.md",
+        "to": "CLAUDE.md",
+        "when": { "exists": "CLAUDE.md" }
       },
       {
-        "from": "commands/{name}.md",
-        "to": ".claude/commands/{name}.md"
+        "from": "rules/*.md",
+        "to": ".claude/rules/*.md"
       },
       {
-        "from": "agents/{name}.md",
-        "to": ".claude/agents/{name}.md"
+        "from": "commands/*.md",
+        "to": ".claude/commands/*.md"
       },
       {
-        "from": "skills/{name}",
-        "to": ".claude/skills/{name}"
+        "from": "agents/*.md",
+        "to": ".claude/agents/*.md"
+      },
+      {
+        "from": "skills/*",
+        "to": ".claude/skills/*"
       }
     ]
   },
@@ -82,8 +87,8 @@
     "description": "Codex command-line AI assistant",
     "flows": [
       {
-        "from": "commands/{name}.md",
-        "to": ".codex/prompts/{name}.md"
+        "from": "commands/*.md",
+        "to": ".codex/prompts/*.md"
       }
     ]
   },
@@ -95,12 +100,12 @@
     "description": "Cursor AI code editor with rules, commands, and MCP support",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".cursor/rules/{name}.mdc"
+        "from": "rules/*.md",
+        "to": ".cursor/rules/*.mdc"
       },
       {
-        "from": "commands/{name}.md",
-        "to": ".cursor/commands/{name}.md"
+        "from": "commands/*.md",
+        "to": ".cursor/commands/*.md"
       },
       {
         "from": "settings.json",
@@ -123,12 +128,12 @@
     "description": "Factory AI with commands and droids (agents)",
     "flows": [
       {
-        "from": "commands/{name}.md",
-        "to": ".factory/commands/{name}.md"
+        "from": "commands/*.md",
+        "to": ".factory/commands/*.md"
       },
       {
-        "from": "agents/{name}.md",
-        "to": ".factory/droids/{name}.md"
+        "from": "agents/*.md",
+        "to": ".factory/droids/*.md"
       }
     ]
   },
@@ -141,12 +146,12 @@
     "description": "Kilo coding assistant with rules and workflows",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".kilocode/rules/{name}.md"
+        "from": "rules/*.md",
+        "to": ".kilocode/rules/*.md"
       },
       {
-        "from": "commands/{name}.md",
-        "to": ".kilocode/workflows/{name}.md"
+        "from": "commands/*.md",
+        "to": ".kilocode/workflows/*.md"
       }
     ]
   },
@@ -157,8 +162,8 @@
     "description": "Kiro AI assistant with steering files",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".kiro/steering/{name}.md"
+        "from": "rules/*.md",
+        "to": ".kiro/steering/*.md"
       }
     ]
   },
@@ -170,12 +175,12 @@
     "description": "OpenCode AI assistant with commands and agents",
     "flows": [
       {
-        "from": "commands/{name}.md",
-        "to": ".opencode/command/{name}.md"
+        "from": "commands/*.md",
+        "to": ".opencode/command/*.md"
       },
       {
-        "from": "agents/{name}.md",
-        "to": ".opencode/agent/{name}.md"
+        "from": "agents/*.md",
+        "to": ".opencode/agent/*.md"
       },
       {
         "from": "mcp.jsonc",
@@ -194,8 +199,13 @@
     "description": "Qwen AI coding assistant with agent support",
     "flows": [
       {
-        "from": "agents/{name}.md",
-        "to": ".qwen/agents/{name}.md"
+        "from": "AGENTS.md",
+        "to": "QWEN.md",
+        "when": { "exists": "QWEN.md" }
+      },
+      {
+        "from": "agents/*.md",
+        "to": ".qwen/agents/*.md"
       }
     ]
   },
@@ -207,8 +217,8 @@
     "description": "Roo AI assistant with command support",
     "flows": [
       {
-        "from": "commands/{name}.md",
-        "to": ".roo/commands/{name}.md"
+        "from": "commands/*.md",
+        "to": ".roo/commands/*.md"
       }
     ]
   },
@@ -217,7 +227,14 @@
     "name": "Warp",
     "rootDir": ".warp",
     "rootFile": "WARP.md",
-    "description": "Warp terminal with AI features"
+    "description": "Warp terminal with AI features",
+    "flows": [
+      {
+        "from": "AGENTS.md",
+        "to": "WARP.md",
+        "when": { "exists": "WARP.md" }
+      }
+    ]
   },
 
   "windsurf": {
@@ -226,8 +243,8 @@
     "description": "Windsurf AI assistant with rules",
     "flows": [
       {
-        "from": "rules/{name}.md",
-        "to": ".windsurf/rules/{name}.md"
+        "from": "rules/*.md",
+        "to": ".windsurf/rules/*.md"
       }
     ]
   }

@@ -81,8 +81,3 @@ Consult git history (e.g., commit 9d23bf2) for prior version details. See [Archi
   - CLI flags/options: `cli-options.md`
 
 ---
-
-#### Note on the former `specs/0.7.0/` Directory
-
-The versioned `specs/0.7.0/` folder bundled rollout specs for the path-based model. Its contents (e.g., architecture, commands, directory-structure, package-sources, registry) have been ported and adapted into the top-level overviews and topic files above, establishing this as the primary, cohesive spec set. Duplicates removed; deferred/future aspects (e.g., remote registries, scope transitions) noted where relevant. For historical diffs, see git commit 9d23bf2473cd4f7de185f9be1be2b833259962f7.
-

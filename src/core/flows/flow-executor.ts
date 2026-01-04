@@ -18,6 +18,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import * as TOML from '@iarna/toml';
 import { JSONPath } from 'jsonpath-plus';
+import { minimatch } from 'minimatch';
 import * as fsUtils from '../../utils/fs.js';
 import type {
   Flow,
@@ -58,7 +59,7 @@ export class DefaultFlowExecutor implements FlowExecutor {
   }
 
   /**
-   * Execute a single flow
+   * Execute a single flow (now supports glob patterns)
    */
   async executeFlow(flow: Flow, context: FlowContext): Promise<FlowResult> {
     const startTime = Date.now();
@@ -97,29 +98,39 @@ export class DefaultFlowExecutor implements FlowExecutor {
         };
       }
 
-      // Resolve paths
-      const sourcePath = this.resolveSourcePath(flow.from, context);
-      const targetPath = this.resolveTargetPath(flow.to as string, context);
+      // Resolve source paths (may return multiple files for glob patterns)
+      const sourcePaths = await this.resolveSourcePattern(flow.from, context);
 
-      // Check if source exists
-      if (!await fsUtils.exists(sourcePath)) {
+      // If no files matched, return success with no files processed
+      if (sourcePaths.length === 0) {
         return {
           source: flow.from,
           target: flow.to as string,
-          success: false,
+          success: true,
           transformed: false,
-          error: new Error(`Source file not found: ${sourcePath}`),
+          warnings: ['No files matched pattern'],
           executionTime: Date.now() - startTime,
         };
       }
 
-      // Execute pipeline
-      const result = await this.executePipeline(flow, sourcePath, targetPath, context);
+      // Execute pipeline for each matched file
+      const results: FlowResult[] = [];
+      for (const sourcePath of sourcePaths) {
+        const targetPath = this.resolveTargetFromGlob(sourcePath, flow.from, flow.to as string, context);
+        const result = await this.executePipeline(flow, sourcePath, targetPath, context);
+        results.push({
+          ...result,
+          executionTime: Date.now() - startTime,
+        });
+      }
 
-      return {
-        ...result,
-        executionTime: Date.now() - startTime,
-      };
+      // If single file, return single result
+      if (results.length === 1) {
+        return results[0];
+      }
+
+      // Aggregate multiple results
+      return this.aggregateResults(results, startTime);
     } catch (error) {
       return {
         source: flow.from,
@@ -155,78 +166,83 @@ export class DefaultFlowExecutor implements FlowExecutor {
     }
 
     const multiTarget = flow.to as MultiTargetFlows;
-    const sourcePath = this.resolveSourcePath(flow.from, context);
+    
+    // Resolve source paths (may be multiple files with glob)
+    const sourcePaths = await this.resolveSourcePattern(flow.from, context);
 
-    // Check if source exists
-    if (!await fsUtils.exists(sourcePath)) {
+    // If no files matched
+    if (sourcePaths.length === 0) {
       return Object.keys(multiTarget).map(target => ({
         source: flow.from,
         target,
-        success: false,
+        success: true,
         transformed: false,
-        error: new Error(`Source file not found: ${sourcePath}`),
+        warnings: ['No files matched pattern'],
       }));
     }
 
-    // Load and parse source once
-    const sourceContent = await this.loadSourceFile(sourcePath);
+    // Execute each source file
+    const allResults: FlowResult[] = [];
 
-    // Execute each target
-    const results: FlowResult[] = [];
+    for (const sourcePath of sourcePaths) {
+      // Load and parse source once
+      const sourceContent = await this.loadSourceFile(sourcePath);
 
-    for (const [targetPath, targetFlow] of Object.entries(multiTarget)) {
-      const startTime = Date.now();
+      // Execute each target
+      for (const [targetPath, targetFlow] of Object.entries(multiTarget)) {
+        const startTime = Date.now();
 
-      try {
-        // Merge target flow with base flow
-        const mergedFlow: Flow = {
-          ...flow,
-          ...targetFlow,
-          from: flow.from,
-          to: targetPath,
-        };
+        try {
+          // Merge target flow with base flow
+          const mergedFlow: Flow = {
+            ...flow,
+            ...targetFlow,
+            from: flow.from,
+            to: targetPath,
+          };
 
-        // Evaluate conditions
-        if (mergedFlow.when && !this.evaluateCondition(mergedFlow.when, context)) {
-          logger.debug(`Multi-target flow skipped due to condition: ${flow.from} -> ${targetPath}`);
-          results.push({
-            source: flow.from,
-            target: targetPath,
-            success: true,
-            transformed: false,
-            warnings: ['Flow skipped due to condition'],
+          // Evaluate conditions
+          if (mergedFlow.when && !this.evaluateCondition(mergedFlow.when, context)) {
+            logger.debug(`Multi-target flow skipped due to condition: ${flow.from} -> ${targetPath}`);
+            allResults.push({
+              source: flow.from,
+              target: targetPath,
+              success: true,
+              transformed: false,
+              warnings: ['Flow skipped due to condition'],
+              executionTime: Date.now() - startTime,
+            });
+            continue;
+          }
+
+          const resolvedTargetPath = this.resolveTargetFromGlob(sourcePath, flow.from, targetPath, context);
+
+          // Execute pipeline with pre-loaded content
+          const result = await this.executePipelineWithContent(
+            mergedFlow,
+            sourceContent,
+            resolvedTargetPath,
+            context
+          );
+
+          allResults.push({
+            ...result,
             executionTime: Date.now() - startTime,
           });
-          continue;
+        } catch (error) {
+          allResults.push({
+            source: flow.from,
+            target: targetPath,
+            success: false,
+            transformed: false,
+            error: error instanceof Error ? error : new Error(String(error)),
+            executionTime: Date.now() - startTime,
+          });
         }
-
-        const resolvedTargetPath = this.resolveTargetPath(targetPath, context);
-
-        // Execute pipeline with pre-loaded content
-        const result = await this.executePipelineWithContent(
-          mergedFlow,
-          sourceContent,
-          resolvedTargetPath,
-          context
-        );
-
-        results.push({
-          ...result,
-          executionTime: Date.now() - startTime,
-        });
-      } catch (error) {
-        results.push({
-          source: flow.from,
-          target: targetPath,
-          success: false,
-          transformed: false,
-          error: error instanceof Error ? error : new Error(String(error)),
-          executionTime: Date.now() - startTime,
-        });
       }
     }
 
-    return results;
+    return allResults;
   }
 
   /**
@@ -771,42 +787,112 @@ export class DefaultFlowExecutor implements FlowExecutor {
     return true;
   }
 
-  /**
-   * Resolve source path
-   */
-  private resolveSourcePath(pattern: string, context: FlowContext): string {
-    const resolved = this.resolvePattern(pattern, context);
-    return path.join(context.packageRoot, resolved);
-  }
+
 
   /**
-   * Resolve target path
+   * Resolve pattern with glob support
+   * Returns resolved file paths (glob patterns return multiple files)
    */
-  private resolveTargetPath(pattern: string, context: FlowContext): string {
-    const resolved = this.resolvePattern(pattern, context);
-    return path.join(context.workspaceRoot, resolved);
-  }
-
-  /**
-   * Resolve pattern with variables
-   */
-  private resolvePattern(pattern: string, context: FlowContext): string {
-    let resolved = pattern;
-
-    // If capturedName is available, use it for {name} placeholder
-    if ('capturedName' in context.variables) {
-      resolved = resolved.replace(/\{name\}/g, String(context.variables.capturedName));
+  private async resolveSourcePattern(pattern: string, context: FlowContext): Promise<string[]> {
+    // Check if pattern contains glob wildcard
+    if (pattern.includes('*')) {
+      return this.resolveGlobPattern(pattern, context.packageRoot);
     }
+    
+    // No glob - return single file path
+    const resolved = path.join(context.packageRoot, pattern);
+    return [resolved];
+  }
 
-    // Replace other variables
-    for (const [key, value] of Object.entries(context.variables)) {
-      // Skip capturedName and name as they're handled above
-      if (key === 'capturedName' || key === 'name') continue;
+  /**
+   * Resolve glob pattern to matching files
+   */
+  private async resolveGlobPattern(pattern: string, baseDir: string): Promise<string[]> {
+    const matches: string[] = [];
+    
+    // Extract directory and file pattern
+    const parts = pattern.split('/');
+    const globPart = parts.findIndex(p => p.includes('*'));
+    
+    if (globPart === -1) {
+      return [path.join(baseDir, pattern)];
+    }
+    
+    // Build directory path up to glob
+    const dirPath = path.join(baseDir, ...parts.slice(0, globPart));
+    const filePattern = parts.slice(globPart).join('/');
+    
+    // Check if directory exists
+    if (!await fsUtils.exists(dirPath)) {
+      return [];
+    }
+    
+    // Recursively find matching files
+    await this.findMatchingFiles(dirPath, filePattern, baseDir, matches);
+    
+    return matches;
+  }
+
+  /**
+   * Recursively find files matching glob pattern
+   */
+  private async findMatchingFiles(
+    dir: string,
+    pattern: string,
+    baseDir: string,
+    matches: string[]
+  ): Promise<void> {
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
       
-      resolved = resolved.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = path.relative(baseDir, fullPath);
+        
+        if (entry.isDirectory()) {
+          // Check if pattern includes subdirectories
+          if (pattern.includes('/') || pattern.startsWith('**')) {
+            await this.findMatchingFiles(fullPath, pattern, baseDir, matches);
+          }
+        } else if (entry.isFile()) {
+          // Test against pattern
+          if (minimatch(relativePath, pattern) || minimatch(entry.name, pattern.split('/').pop() || pattern)) {
+            matches.push(fullPath);
+          }
+        }
+      }
+    } catch (error) {
+      // Ignore errors (directory not accessible, etc.)
     }
+  }
 
-    return resolved;
+  /**
+   * Resolve target path from source path and patterns
+   */
+  private resolveTargetFromGlob(sourcePath: string, fromPattern: string, toPattern: string, context: FlowContext): string {
+    // Get the source filename
+    const sourceFileName = path.basename(sourcePath);
+    const sourceExt = path.extname(sourcePath);
+    const sourceBase = path.basename(sourcePath, sourceExt);
+    
+    // If 'to' pattern has glob, replace with matched filename
+    if (toPattern.includes('*')) {
+      // Parse the target pattern to extract directory and extension
+      const toParts = toPattern.split('*');
+      const toPrefix = toParts[0]; // e.g., ".cursor/rules/"
+      const toSuffix = toParts[1] || ''; // e.g., ".mdc"
+      
+      // Build target filename
+      // If toSuffix has an extension, use it; otherwise keep source extension
+      const targetExt = toSuffix.startsWith('.') ? toSuffix : (sourceExt + toSuffix);
+      const targetFileName = sourceBase + targetExt;
+      
+      const resolvedTo = toPrefix + targetFileName;
+      return path.join(context.workspaceRoot, resolvedTo);
+    }
+    
+    // No glob in target - use as-is
+    return path.join(context.workspaceRoot, toPattern);
   }
 
   /**

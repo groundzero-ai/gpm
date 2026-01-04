@@ -14,7 +14,7 @@
  * Flows execute through a pipeline: load → extract → filter → map → transform → embed → merge → write
  */
 export interface Flow {
-  /** Source file pattern (supports {name} placeholders) */
+  /** Source file pattern (supports glob patterns like *.md) */
   from: string;
 
   /** Target path or multi-target configuration */

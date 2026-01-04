@@ -766,8 +766,8 @@ Warning: Package @user/b overwrites content from @user/a in .cursor/mcp.json
 
 ```jsonc
 {
-  "from": "rules/{name}.md",
-  "to": ".cursor/rules/{name}.md"
+  "from": "rules/*.md",
+  "to": ".cursor/rules/*.md"
 }
 ```
 

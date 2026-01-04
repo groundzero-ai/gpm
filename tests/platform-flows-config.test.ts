@@ -7,10 +7,16 @@
 
 import assert from 'node:assert/strict'
 
-const { 
-  validatePlatformsConfig, 
-  mergePlatformsConfig,
-} = await import(new URL('../src/core/platforms.js', import.meta.url).href)
+let validatePlatformsConfig, mergePlatformsConfig;
+
+try {
+  const module = await import(new URL('../src/core/platforms.js', import.meta.url).href);
+  validatePlatformsConfig = module.validatePlatformsConfig;
+  mergePlatformsConfig = module.mergePlatformsConfig;
+} catch (error) {
+  console.error('Failed to import platforms module:', error);
+  process.exit(1);
+}
 
 console.log('platform-flows-config tests starting')
 
@@ -22,8 +28,8 @@ console.log('platform-flows-config tests starting')
       rootDir: '.test',
       flows: [
         {
-          from: 'rules/{name}.md',
-          to: '.test/rules/{name}.md'
+          from: 'rules/*.md',
+          to: '.test/rules/*.md'
         }
       ]
     }
@@ -172,8 +178,8 @@ console.log('platform-flows-config tests starting')
       rootDir: '.test',
       flows: [
         {
-          from: 'rules/{name}.md',
-          to: '.test/rules/{name}.md'
+          from: 'rules/*.md',
+          to: '.test/rules/*.md'
         }
       ]
     }
@@ -212,8 +218,8 @@ console.log('platform-flows-config tests starting')
       ],
       flows: [
         {
-          from: 'commands/{name}.md',
-          to: '.test/commands/{name}.md'
+          from: 'commands/*.md',
+          to: '.test/commands/*.md'
         }
       ]
     }
@@ -283,10 +289,10 @@ console.log('platform-flows-config tests starting')
       },
       flows: [
         {
-          from: 'agents/{name}.md',
+          from: 'agents/*.md',
           to: {
-            workspace: '.complex/agents/{name}.md',
-            alt: '.complex/alt-agents/{name}.md'
+            workspace: '.complex/agents/*.md',
+            alt: '.complex/alt-agents/*.md'
           },
           extract: '$.frontmatter',
           pick: ['name', 'description', 'categories'],

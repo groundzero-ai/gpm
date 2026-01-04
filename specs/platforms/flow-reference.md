@@ -34,35 +34,48 @@ Source file pattern relative to package root.
 **Pattern syntax:**
 ```jsonc
 "rules/typescript.md"          // Exact file
-"rules/{name}.md"              // Placeholder (captured as 'name')
-"rules/*.md"                   // Wildcard (all .md files)
-"**/*.md"                      // Recursive wildcard
+"rules/*.md"                   // Glob pattern (all .md files)
+"commands/*.md"                // Glob in specific directory
+"skills/code-review/*.md"      // Glob in nested directory
 ```
 
-**Placeholder usage:**
+**Glob pattern usage:**
 ```jsonc
 {
-  "from": "rules/{name}.md",
-  "to": ".cursor/rules/{name}.mdc"  // {name} reused in target
+  "from": "rules/*.md",
+  "to": ".cursor/rules/*.mdc"  // * matches filename, changes extension
 }
 ```
 
 **Examples:**
 ```jsonc
 "config.yaml"                  // Single file
-"rules/{name}.md"              // Pattern with capture
+"rules/*.md"                   // All markdown in rules/
 "agents/*.md"                  // All agents
-"**/*.{md,yaml}"               // Multiple extensions (if supported)
+"commands/*.md"                // All commands
+```
+
+**Future support (coming soon):**
+```jsonc
+"**/*.md"                      // Recursive glob
+"*.{md,yaml}"                  // Multiple extensions
 ```
 
 ### `to` (string | object)
 
 Target path(s) relative to workspace root.
 
-**Single target:**
+**Single target with glob:**
 ```jsonc
 {
-  "to": ".cursor/rules/{name}.mdc"
+  "to": ".cursor/rules/*.mdc"  // * matches source filename
+}
+```
+
+**Exact file mapping:**
+```jsonc
+{
+  "to": "CLAUDE.md"  // Specific target file
 }
 ```
 
@@ -785,13 +798,13 @@ Used in `map` field for value transformations.
 
 ```jsonc
 {
-  "from": "rules/{name}.md",
-  "to": ".cursor/rules/{name}.mdc"
+  "from": "rules/*.md",
+  "to": ".cursor/rules/*.mdc"
 }
 ```
 
 **Behavior:**
-- Copies all files from `rules/` directory
+- Copies all `.md` files from `rules/` directory
 - Changes extension from `.md` to `.mdc`
 - No content transformation
 
@@ -884,8 +897,8 @@ Used in `map` field for value transformations.
 
 ```jsonc
 {
-  "from": "agents/{name}.md",
-  "to": ".claude/agents/{name}.md",
+  "from": "agents/*.md",
+  "to": ".claude/agents/*.md",
   "map": {
     "role": "type",
     "model": {
