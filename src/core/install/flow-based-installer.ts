@@ -10,6 +10,7 @@ import { join, dirname, basename, relative, extname } from 'path';
 import { promises as fs } from 'fs';
 import type { Platform } from '../platforms.js';
 import type { Flow, FlowContext, FlowResult } from '../../types/flows.js';
+import type { WorkspaceIndexFileMapping } from '../../types/workspace-index.js';
 import type { InstallOptions } from '../../types/index.js';
 import { getPlatformDefinition, getGlobalFlows, platformUsesFlows } from '../platforms.js';
 import { createFlowExecutor } from '../flows/flow-executor.js';
@@ -47,7 +48,7 @@ export interface FlowInstallResult {
    * Package-relative source file -> workspace-relative target files
    * Used for precise uninstall and index tracking.
    */
-  fileMapping: Record<string, string[]>;
+  fileMapping: Record<string, (string | WorkspaceIndexFileMapping)[]>;
 }
 
 export interface FlowConflictReport {
@@ -406,7 +407,23 @@ export async function installPackageWithFlows(
               result.targetPaths.push(target);
               const targetRelFromWorkspace = relative(workspaceRoot, target);
               if (!result.fileMapping[sourceRel]) result.fileMapping[sourceRel] = [];
-              result.fileMapping[sourceRel].push(targetRelFromWorkspace);
+
+              const normalizedTargetRel = targetRelFromWorkspace.replace(/\\/g, '/');
+              const isKeyTrackedMerge =
+                (flowResult.merge === 'deep' || flowResult.merge === 'shallow') &&
+                Array.isArray(flowResult.keys) &&
+                flowResult.keys.length > 0;
+
+              if (isKeyTrackedMerge) {
+                result.fileMapping[sourceRel].push({
+                  target: normalizedTargetRel,
+                  merge: flowResult.merge,
+                  keys: flowResult.keys
+                });
+              } else {
+                result.fileMapping[sourceRel].push(normalizedTargetRel);
+              }
+
             }
 
             if (!dryRun) {

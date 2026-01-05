@@ -121,6 +121,18 @@ export async function removeKeysFromMergedFile(
     return { deleted: false, updated: false };
   }
 
+  const hasNestedKeyPath = (obj: any, keyPath: string): boolean => {
+    if (!obj || typeof obj !== 'object') return false;
+    const parts = keyPath.split('.').filter(Boolean);
+    let current: any = obj;
+    for (const part of parts) {
+      if (!current || typeof current !== 'object' || !(part in current)) return false;
+      current = current[part];
+    }
+    return true;
+  };
+
+  const existingBefore = keysToRemove.filter(k => typeof k === 'string' && hasNestedKeyPath(data, k)).length;
   // Remove each key
   for (const key of keysToRemove) {
     deleteNestedKey(data, key);

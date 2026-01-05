@@ -48,7 +48,8 @@ export function sortMapping(record: Record<string, any[]>): Record<string, any[]
   const normalized: Record<string, any[]> = {};
   for (const key of sortedKeys) {
     const values = record[key] || [];
-    if (values.length > 0 && typeof values[0] === 'object') {
+    const hasComplex = values.some(v => typeof v === 'object' && v !== null);
+    if (hasComplex) {
       // Complex mappings - sort by target path
       const sorted = [...values].sort((a, b) => {
         const targetA = typeof a === 'string' ? a : a.target;

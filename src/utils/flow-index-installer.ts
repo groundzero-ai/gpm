@@ -6,11 +6,9 @@
  */
 
 import { dirname, join, sep } from 'path';
-import { 
-  installPackageWithFlows, 
-  type FlowInstallResult,
-  type FlowInstallContext,
-  getFlowStatistics 
+import {
+  installPackageWithFlows,
+  type FlowInstallContext
 } from '../core/install/flow-based-installer.js';
 import { resolvePackageContentRoot } from '../core/install/local-source-resolution.js';
 import { getRegistryDirectories } from '../core/directory.js';
@@ -24,6 +22,7 @@ import {
 } from './workspace-index-yml.js';
 import type { Platform } from '../core/platforms.js';
 import type { InstallOptions } from '../types/index.js';
+import type { WorkspaceIndexFileMapping } from '../types/workspace-index.js';
 
 // ============================================================================
 // Types
@@ -48,12 +47,6 @@ interface PackageIndexRecord {
     hash?: string;
   };
   files: Record<string, (string | WorkspaceIndexFileMapping)[]>;
-}
-
-interface WorkspaceIndexFileMapping {
-  target: string;
-  merge?: string;
-  keys?: string[];
 }
 
 // ============================================================================
@@ -97,7 +90,7 @@ export async function installPackageByIndexWithFlows(
   const allTargetPaths = new Set<string>();
   const allConflicts: string[] = [];
   const allErrors: string[] = [];
-  const fileMapping: Record<string, Set<string>> = {};
+  const fileMapping: Record<string, (string | WorkspaceIndexFileMapping)[]> = {};
 
   // Execute flows for each platform
   for (const platform of platforms) {
@@ -119,12 +112,23 @@ export async function installPackageByIndexWithFlows(
         allTargetPaths.add(absTarget);
       }
       for (const [source, targets] of Object.entries(result.fileMapping ?? {})) {
-        if (!fileMapping[source]) {
-          fileMapping[source] = new Set<string>();
+        const existing = fileMapping[source] ?? [];
+        // Merge while deduping by target path; prefer complex mapping over string.
+        const byTarget = new Map<string, string | WorkspaceIndexFileMapping>();
+        for (const m of existing) {
+          const targetPath = typeof m === 'string' ? m : m.target;
+          byTarget.set(targetPath, m);
         }
-        for (const target of targets) {
-          fileMapping[source].add(target);
+        for (const m of targets) {
+          const targetPath = typeof m === 'string' ? m : m.target;
+          const prior = byTarget.get(targetPath);
+          if (!prior) {
+            byTarget.set(targetPath, m);
+          } else if (typeof prior === 'string' && typeof m !== 'string') {
+            byTarget.set(targetPath, m);
+          }
         }
+        fileMapping[source] = Array.from(byTarget.values());
       }
 
       // Aggregate statistics
@@ -208,7 +212,7 @@ async function updateWorkspaceIndexForFlows(
   packageName: string,
   version: string,
   packagePath: string,
-  fileMapping: Record<string, Set<string>>
+  fileMapping: Record<string, (string | WorkspaceIndexFileMapping)[]>
 ): Promise<void> {
   try {
     const wsRecord = await readWorkspaceIndex(cwd);
@@ -217,9 +221,9 @@ async function updateWorkspaceIndexForFlows(
     wsRecord.index.packages = wsRecord.index.packages ?? {};
     
     // Convert file mapping to workspace index format
-    const files: Record<string, string[]> = {};
+    const files: Record<string, (string | WorkspaceIndexFileMapping)[]> = {};
     for (const [source, targets] of Object.entries(fileMapping)) {
-      files[source] = Array.from(targets).sort();
+      files[source] = targets;
     }
     
     // Convert to workspace-relative path if under workspace, then apply tilde notation for global paths

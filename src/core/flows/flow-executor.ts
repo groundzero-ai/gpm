@@ -380,9 +380,20 @@ export class DefaultFlowExecutor implements FlowExecutor {
         transformed = true;
       }
 
+      const shouldTrackKeys =
+        Boolean(flow.merge) &&
+        flow.merge !== 'replace' &&
+        flow.merge !== 'composite';
+
+      const targetExists = await fsUtils.exists(targetPath);
+
+      let targetKeysBeforeMerge: Set<string> | undefined;
+
       // Step 7: Merge with existing target (if needed)
-      if (await fsUtils.exists(targetPath)) {
+      if (targetExists) {
         const targetContent = await this.loadSourceFile(targetPath);
+        const targetKeys = shouldTrackKeys ? extractAllKeys(targetContent.data) : undefined;
+        targetKeysBeforeMerge = targetKeys ? new Set(targetKeys) : undefined;
         
         // Special handling for composite merge - works with raw text
         if (flow.merge === 'composite') {
@@ -414,8 +425,11 @@ export class DefaultFlowExecutor implements FlowExecutor {
 
       // Track keys for merged files (for precise uninstall)
       let contributedKeys: string[] | undefined;
-      if (flow.merge && flow.merge !== 'replace' && flow.merge !== 'composite') {
-        contributedKeys = extractAllKeys(data);
+      if (shouldTrackKeys) {
+        const postMergeKeys = extractAllKeys(data);
+        contributedKeys = targetKeysBeforeMerge
+          ? postMergeKeys.filter(key => !targetKeysBeforeMerge.has(key))
+          : postMergeKeys;
       }
 
       return {
