@@ -12,7 +12,7 @@ import type { Platform } from '../platforms.js';
 import type { Flow, FlowContext, FlowResult } from '../../types/flows.js';
 import type { WorkspaceIndexFileMapping } from '../../types/workspace-index.js';
 import type { InstallOptions } from '../../types/index.js';
-import { getPlatformDefinition, getGlobalFlows, platformUsesFlows } from '../platforms.js';
+import { getPlatformDefinition, getGlobalFlows, platformUsesFlows, getAllPlatforms, isPlatformId } from '../platforms.js';
 import { createFlowExecutor } from '../flows/flow-executor.js';
 import { exists, ensureDir } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
@@ -67,6 +67,50 @@ export interface FlowInstallError {
   sourcePath: string;
   error: Error;
   message: string;
+}
+
+// ============================================================================
+// Platform Suffix Detection Helpers
+// ============================================================================
+
+/**
+ * Extract platform suffix from filename (e.g., "mcp.claude.jsonc" -> "claude")
+ * Works for both root-level files and files in subdirectories
+ */
+function extractPlatformSuffixFromFilename(filename: string): string | null {
+  const knownPlatforms = getAllPlatforms({ includeDisabled: true }) as readonly Platform[];
+  const baseName = basename(filename);
+  const parts = baseName.split('.');
+  
+  // Need at least 3 parts: name.platform.ext
+  if (parts.length >= 3) {
+    const possiblePlatform = parts[parts.length - 2];
+    if (isPlatformId(possiblePlatform)) {
+      return possiblePlatform;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Strip platform suffix from filename (e.g., "mcp.claude.jsonc" -> "mcp.jsonc")
+ */
+function stripPlatformSuffixFromFilename(filename: string): string {
+  const platformSuffix = extractPlatformSuffixFromFilename(filename);
+  if (!platformSuffix) {
+    return filename;
+  }
+  
+  const dir = dirname(filename);
+  const baseName = basename(filename);
+  const parts = baseName.split('.');
+  
+  // Remove platform suffix (second-to-last part)
+  const strippedParts = [...parts.slice(0, -2), parts[parts.length - 1]];
+  const strippedBaseName = strippedParts.join('.');
+  
+  return dir === '.' ? strippedBaseName : join(dir, strippedBaseName);
 }
 
 // ============================================================================
@@ -160,22 +204,50 @@ function extractCapturedName(sourcePath: string, pattern: string): string | unde
 /**
  * Match files against a pattern
  * Supports simple patterns with {name} placeholders and * wildcards
+ * Also discovers platform-specific variant files (e.g., mcp.claude.jsonc for mcp.jsonc)
  */
 async function matchPattern(pattern: string, baseDir: string): Promise<string[]> {
-  // Fast path: no wildcards/placeholders, just check exact file
+  const matches: string[] = [];
+  
+  // Fast path: no wildcards/placeholders, check exact file and platform-specific variants
   if (!pattern.includes('*') && !pattern.includes('{')) {
     const exactPath = join(baseDir, pattern);
+    
+    // Check for exact match
     if (await exists(exactPath)) {
-      return [relative(baseDir, exactPath)];
+      matches.push(relative(baseDir, exactPath));
     }
-    return [];
+    
+    // Also check for platform-specific variants (e.g., mcp.claude.jsonc, mcp.cursor.jsonc)
+    const dirPath = dirname(exactPath);
+    const fileName = basename(exactPath);
+    const nameParts = fileName.split('.');
+    
+    if (nameParts.length >= 2 && await exists(dirPath)) {
+      // Get all known platforms
+      const knownPlatforms = getAllPlatforms({ includeDisabled: true }) as readonly Platform[];
+      
+      // For each platform, check if a platform-specific variant exists
+      // Pattern: name.platform.ext (e.g., mcp.claude.jsonc)
+      const ext = nameParts[nameParts.length - 1];
+      const baseName = nameParts.slice(0, -1).join('.');
+      
+      for (const platform of knownPlatforms) {
+        const platformFileName = `${baseName}.${platform}.${ext}`;
+        const platformPath = join(dirPath, platformFileName);
+        
+        if (await exists(platformPath)) {
+          matches.push(relative(baseDir, platformPath));
+        }
+      }
+    }
+    
+    return matches;
   }
 
   // Globs: reuse a minimatch-based recursive walk similar to flow-executor.ts
   const parts = pattern.split('/');
   const globPart = parts.findIndex(p => p.includes('*'));
-
-  const matches: string[] = [];
 
   // No glob segment (e.g. {name}.md): scan the parent dir and filter
   if (globPart === -1) {
@@ -372,12 +444,19 @@ export async function installPackageWithFlows(
     for (const [flow, sources] of flowSources) {
       for (const sourceRel of sources) {
         const parsed = parseUniversalPath(sourceRel, { allowPlatformSuffix: true });
-        if (parsed?.platformSuffix) {
-          const baseKey = `${parsed.universalSubdir}/${parsed.relPath}`;
+        const platformSuffix = parsed?.platformSuffix || extractPlatformSuffixFromFilename(sourceRel);
+        
+        if (platformSuffix) {
+          // For universal subdir files, use the parsed baseKey
+          // For root-level files, use the stripped filename as the baseKey
+          const baseKey = parsed 
+            ? `${parsed.universalSubdir}/${parsed.relPath}`
+            : stripPlatformSuffixFromFilename(sourceRel);
+          
           if (!overridesByBasePath.has(baseKey)) {
             overridesByBasePath.set(baseKey, new Set());
           }
-          overridesByBasePath.get(baseKey)!.add(parsed.platformSuffix as Platform);
+          overridesByBasePath.get(baseKey)!.add(platformSuffix as Platform);
         }
       }
     }
@@ -387,25 +466,44 @@ export async function installPackageWithFlows(
       for (const sourceRel of sources) {
         const sourceAbs = join(packageRoot, sourceRel);
         
-        // Check for platform-specific file suffix (e.g., commands/foo.claude.md)
+        // Check for platform-specific file suffix (e.g., commands/foo.claude.md or mcp.claude.jsonc)
         // Parse with allowPlatformSuffix to detect and strip platform suffix
         const parsed = parseUniversalPath(sourceRel, { allowPlatformSuffix: true });
         
+        // For files without universal subdir prefix, check platform suffix directly from filename
+        const platformSuffix = parsed?.platformSuffix || extractPlatformSuffixFromFilename(sourceRel);
+        const isUniversalSubdirFile = parsed !== null;
+        
         // If file has platform suffix, only process for that specific platform
-        if (parsed?.platformSuffix) {
-          const filePlatform = parsed.platformSuffix as Platform;
+        if (platformSuffix) {
+          const filePlatform = platformSuffix as Platform;
           if (filePlatform !== platform) {
             // This file is for a different platform, skip it
             logger.debug(`Skipping ${sourceRel} for platform ${platform} (file is for ${filePlatform})`);
             continue;
           }
-          // File is for current platform - use the suffix-stripped path for mapping
-          // parsed.relPath has the suffix removed (e.g., "foo.claude.md" -> "foo.md")
-        } else if (parsed) {
-          // Universal file: check if there's a platform-specific override for current platform
+          // File is for current platform - continue processing
+        } else if (isUniversalSubdirFile && parsed) {
+          // Universal file with subdir: check if there's a platform-specific override for current platform
           const baseKey = `${parsed.universalSubdir}/${parsed.relPath}`;
           const overridePlatforms = overridesByBasePath.get(baseKey);
           if (overridePlatforms && overridePlatforms.has(platform)) {
+            // This universal file is overridden by a platform-specific file for this platform
+            logger.debug(`Skipping universal file ${sourceRel} for platform ${platform} (overridden by platform-specific file)`);
+            continue;
+          }
+        } else {
+          // Root-level file without platform suffix: check if there's a platform-specific override
+          const strippedFileName = stripPlatformSuffixFromFilename(sourceRel);
+          
+          // Check if any file in sources is a platform-specific override for this file
+          const hasOverrideForPlatform = sources.some(s => {
+            const sSuffix = extractPlatformSuffixFromFilename(s);
+            const sStripped = stripPlatformSuffixFromFilename(s);
+            return sSuffix === platform && sStripped === strippedFileName;
+          });
+          
+          if (hasOverrideForPlatform) {
             // This universal file is overridden by a platform-specific file for this platform
             logger.debug(`Skipping universal file ${sourceRel} for platform ${platform} (overridden by platform-specific file)`);
             continue;
