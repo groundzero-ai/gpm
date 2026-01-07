@@ -4,6 +4,8 @@ import { logger } from '../../utils/logger.js';
 import { ValidationError } from '../../utils/errors.js';
 import { isJunk } from 'junk';
 import type { Package, PackageFile, PackageYml } from '../../types/index.js';
+import type { PackageFormat } from './format-detector.js';
+import { detectPackageFormat } from './format-detector.js';
 
 /**
  * In-memory cache for transformed plugin packages.
@@ -120,9 +122,28 @@ export async function transformPluginToPackage(pluginDir: string): Promise<Packa
   // Collect all plugin files (preserve entire directory structure)
   const files = await extractPluginFiles(pluginDir);
   
+  // Detect package format for conversion hints
+  const format = detectPackageFormat(files);
+  
+  // Claude plugins have universal structure but Claude-specific content (frontmatter)
+  // Mark as native Claude format: needs path mapping but no content transformation
+  // - isNativeFormat: true = content is already in target format (skip map/pipe transforms)
+  // - nativePlatform: 'claude' = this content is designed for Claude platform
+  // - platform: 'claude' = source format is Claude-specific
+  // 
+  // Installation behavior:
+  // - Installing to claude: Use path mappings only (commands/ → .claude/commands/)
+  // - Installing to other platforms: Full conversion (claude → universal → target)
+  format.type = 'platform-specific';
+  format.platform = 'claude';
+  format.isNativeFormat = true;
+  format.nativePlatform = 'claude';
+  
   const pkg: Package = {
     metadata,
-    files
+    files,
+    // Store format metadata for installation pipeline
+    _format: format
   };
   
   // Cache the transformed plugin for later retrieval
@@ -131,7 +152,10 @@ export async function transformPluginToPackage(pluginDir: string): Promise<Packa
   logger.info('Transformed Claude Code plugin', {
     name: metadata.name,
     version: metadata.version,
-    fileCount: files.length
+    fileCount: files.length,
+    format: format.type,
+    platform: format.platform,
+    confidence: format.confidence
   });
   
   return pkg;

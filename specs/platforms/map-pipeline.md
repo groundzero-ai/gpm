@@ -601,6 +601,103 @@ The Map Pipeline provides a powerful, MongoDB-inspired transformation system for
 
 For complete examples and usage patterns, see `plans/platforms-dsl.md` and the test suite.
 
+## Advanced Features
+
+### Transform Inversion (Universal Converter)
+
+**Introduced in:** Commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`
+
+The Universal Platform Converter can **automatically invert** transform operations to enable platform-specific → universal conversions. This allows installing Claude plugins to other platforms.
+
+**Inversion rules:**
+
+#### `$transform` Inversion
+
+Multi-step transformations can be inverted by reversing the pipeline:
+
+**Forward transformation:**
+```jsonc
+{
+  "$transform": {
+    "field": "tools",
+    "steps": [
+      { "filter": { "value": true } },   // Object → filtered object
+      { "keys": true },                   // Object → array of keys
+      { "join": ", " }                    // Array → string
+    ]
+  }
+}
+```
+Input: `{ tools: { bash: true, read: true, write: false } }`  
+Output: `{ tools: "bash, read" }`
+
+**Inverted transformation:**
+```jsonc
+{
+  "$transform": {
+    "field": "tools",
+    "steps": [
+      { "split": ", " },                 // String → array
+      { "arrayToObject": { "value": true } }  // Array → object
+    ]
+  }
+}
+```
+Input: `{ tools: "bash, read" }`  
+Output: `{ tools: { bash: true, read: true } }`
+
+**Invertible transform steps:**
+- `join` ↔ `split`
+- `keys` + `filter` ↔ `arrayToObject`
+- `entries` ↔ `fromEntries`
+
+**Non-invertible (skipped in reverse):**
+- `map` (capitalize, uppercase, lowercase) - loses original case
+- `values` - loses keys
+- Complex multi-step transforms
+
+#### `$rename` Inversion
+
+Key renaming inverts by swapping key pairs:
+
+**Forward:**
+```jsonc
+{ "$rename": { "mcp": "mcpServers" } }
+```
+
+**Inverted:**
+```jsonc
+{ "$rename": { "mcpServers": "mcp" } }
+```
+
+#### `$copy` Inversion
+
+Field copying inverts by swapping from/to:
+
+**Forward:**
+```jsonc
+{ "$copy": { "from": "config", "to": "settings" } }
+```
+
+**Inverted:**
+```jsonc
+{ "$copy": { "from": "settings", "to": "config" } }
+```
+
+#### Non-Reversible Operations
+
+These operations are **skipped** during inversion:
+- `$set` - Cannot determine original value
+- `$unset` - Cannot restore removed fields
+- Complex `$transform` with lossy steps
+- `$switch` with ambiguous patterns
+
+**See:** 
+- [Universal Converter](./universal-converter.md) - Complete conversion system
+- `src/core/flows/flow-inverter.ts` - Inversion implementation
+- `src/core/flows/map-pipeline/operations/transform.ts` - Transform step inversion
+
 ---
 
-**Map Pipeline v1.0** - Implemented in commit `e464927d2f5d2480c439a83c5cfc2e04053ac22d`
+**Map Pipeline v1.0** - Implemented in commit `e464927d2f5d2480c439a83c5cfc2e04053ac22d`  
+**Transform Inversion** - Implemented in commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`

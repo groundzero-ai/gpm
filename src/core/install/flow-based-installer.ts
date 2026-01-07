@@ -11,7 +11,7 @@ import { promises as fs } from 'fs';
 import type { Platform } from '../platforms.js';
 import type { Flow, FlowContext, FlowResult } from '../../types/flows.js';
 import type { WorkspaceIndexFileMapping } from '../../types/workspace-index.js';
-import type { InstallOptions } from '../../types/index.js';
+import type { InstallOptions, Package } from '../../types/index.js';
 import { getPlatformDefinition, getGlobalFlows, platformUsesFlows, getAllPlatforms, isPlatformId } from '../platforms.js';
 import { createFlowExecutor } from '../flows/flow-executor.js';
 import { exists, ensureDir } from '../../utils/fs.js';
@@ -19,6 +19,14 @@ import { logger } from '../../utils/logger.js';
 import { toTildePath } from '../../utils/path-resolution.js';
 import { minimatch } from 'minimatch';
 import { parseUniversalPath } from '../../utils/platform-file.js';
+import type { PackageFormat } from '../install/format-detector.js';
+import { 
+  detectPackageFormat, 
+  shouldInstallDirectly,
+  shouldUsePathMappingOnly,
+  needsConversion 
+} from '../install/format-detector.js';
+import { createPlatformConverter } from '../flows/platform-converter.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -32,6 +40,11 @@ export interface FlowInstallContext {
   packageVersion: string;
   priority: number;
   dryRun: boolean;
+  /**
+   * Optional package format metadata (e.g., from plugin transformer)
+   * If provided, skips format detection
+   */
+  packageFormat?: any;  // Using any to avoid circular dependency with format-detector
 }
 
 export interface FlowInstallResult {
@@ -371,7 +384,7 @@ function resolveTargetFromGlob(
 // ============================================================================
 
 /**
- * Execute flows for a single package installation
+ * Execute flows for a single package installation with format detection and conversion
  */
 export async function installPackageWithFlows(
   installContext: FlowInstallContext,
@@ -404,6 +417,50 @@ export async function installPackageWithFlows(
       logger.debug(`Platform ${platform} does not use flows, skipping flow-based installation`);
       return result;
     }
+    
+    // Phase 1: Get or detect package format
+    const packageFormat = installContext.packageFormat || await detectPackageFormatFromDirectory(packageRoot);
+    
+    logger.info('Package format determination', {
+      providedFormat: installContext.packageFormat ? 'yes' : 'no',
+      providedType: installContext.packageFormat?.type,
+      providedPlatform: installContext.packageFormat?.platform,
+      finalType: packageFormat.type,
+      finalPlatform: packageFormat.platform
+    });
+    
+    logger.debug('Package format', {
+      package: packageName,
+      type: packageFormat.type,
+      platform: packageFormat.platform,
+      confidence: packageFormat.confidence,
+      isNativeFormat: packageFormat.isNativeFormat,
+      nativePlatform: packageFormat.nativePlatform,
+      targetPlatform: platform,
+      source: installContext.packageFormat ? 'provided' : 'detected'
+    });
+    
+    // Phase 2: Check if path-mapping-only installation (native format)
+    if (shouldUsePathMappingOnly(packageFormat, platform)) {
+      logger.info(`Installing ${packageName} for ${platform} with path mapping only (native format, no content transforms)`);
+      return await installWithPathMappingOnly(installContext, packageFormat, options);
+    }
+    
+    // Phase 3: Check if direct installation (no conversion, no path mapping)
+    if (shouldInstallDirectly(packageFormat, platform)) {
+      logger.info(`Installing ${packageName} AS-IS for ${platform} platform (matching format)`);
+      return await installDirectly(installContext, packageFormat);
+    }
+    
+    // Phase 5: Check if conversion needed
+    if (needsConversion(packageFormat, platform)) {
+      logger.info(`Converting ${packageName} from ${packageFormat.platform} to ${platform} format`);
+      return await installWithConversion(installContext, packageFormat, options);
+    }
+    
+    // Phase 7: Standard flow-based installation (universal format)
+    // This is the original behavior for universal packages
+    logger.debug(`Standard flow-based installation for ${packageName}`);
     
     // Get applicable flows
     const flows = getApplicableFlows(platform, workspaceRoot);
@@ -768,6 +825,623 @@ export async function installPackagesWithFlows(
   }
   
   return aggregatedResult;
+}
+
+// ============================================================================
+// Format Detection and Conversion Helpers
+// ============================================================================
+
+/**
+ * Detect package format from directory by reading files
+ */
+async function detectPackageFormatFromDirectory(packageRoot: string): Promise<PackageFormat> {
+  const files: Array<{ path: string; content: string }> = [];
+  
+  // Read all files in package directory
+  try {
+    for await (const fullPath of walkFiles(packageRoot)) {
+      const relativePath = relative(packageRoot, fullPath);
+      
+      // Skip git metadata and junk files
+      if (relativePath.startsWith('.git/') || relativePath === '.git') {
+        continue;
+      }
+      
+      const pathParts = relativePath.split('/');
+      const isJunk = await import('junk').then(m => m.isJunk);
+      if (pathParts.some(part => isJunk(part))) {
+        continue;
+      }
+      
+      files.push({
+        path: relativePath,
+        content: ''  // We only need paths for format detection
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to read package directory for format detection', { packageRoot, error });
+  }
+  
+  return detectPackageFormat(files);
+}
+
+/**
+ * Helper to walk files in directory
+ */
+async function* walkFiles(dir: string): AsyncGenerator<string> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    
+    if (entry.isDirectory()) {
+      yield* walkFiles(fullPath);
+    } else if (entry.isFile()) {
+      yield fullPath;
+    }
+  }
+}
+
+/**
+ * Install package directly without flow transformations (AS-IS installation)
+ * Used when source platform = target platform
+ */
+async function installDirectly(
+  installContext: FlowInstallContext,
+  packageFormat: PackageFormat
+): Promise<FlowInstallResult> {
+  const {
+    packageName,
+    packageRoot,
+    workspaceRoot,
+    platform,
+    dryRun
+  } = installContext;
+  
+  const result: FlowInstallResult = {
+    success: true,
+    filesProcessed: 0,
+    filesWritten: 0,
+    conflicts: [],
+    errors: [],
+    targetPaths: [],
+    fileMapping: {}
+  };
+  
+  logger.info(`Installing ${packageName} directly for ${platform} (no transformations)`);
+  
+  try {
+    // Copy files AS-IS from package to workspace
+    for await (const sourcePath of walkFiles(packageRoot)) {
+      const relativePath = relative(packageRoot, sourcePath);
+      
+      // Skip metadata files
+      if (relativePath.startsWith('.openpackage/') || relativePath === 'openpackage.yml') {
+        continue;
+      }
+      
+      const targetPath = join(workspaceRoot, relativePath);
+      
+      result.filesProcessed++;
+      
+      if (!dryRun) {
+        await ensureDir(dirname(targetPath));
+        await fs.copyFile(sourcePath, targetPath);
+        result.filesWritten++;
+      }
+      
+      result.targetPaths.push(targetPath);
+      
+      // Track file mapping for uninstall
+      if (!result.fileMapping[relativePath]) {
+        result.fileMapping[relativePath] = [];
+      }
+      result.fileMapping[relativePath].push(relativePath);
+    }
+    
+    logger.info(`Direct installation complete: ${result.filesProcessed} files processed`);
+    
+  } catch (error) {
+    logger.error('Direct installation failed', { packageName, error });
+    result.success = false;
+    result.errors.push({
+      flow: { from: packageRoot, to: workspaceRoot },
+      sourcePath: packageRoot,
+      error: error as Error,
+      message: `Failed to install directly: ${(error as Error).message}`
+    });
+  }
+  
+  return result;
+}
+
+/**
+ * Install package with path mapping only (no content transformations)
+ * 
+ * Used for native format packages where content is already correct for the target
+ * platform (e.g., Claude plugin with Claude-format frontmatter), but file paths
+ * need to be mapped from universal subdirs to platform subdirs.
+ * 
+ * Strategy:
+ * 1. Get platform flows for target platform
+ * 2. Strip all content transformations (map, pipe operations)
+ * 3. Execute flows with path mapping only
+ * 
+ * Example:
+ *   Source: commands/test.md (Claude plugin root)
+ *   Target: .claude/commands/test.md (workspace)
+ *   Content: Unchanged (already in Claude format)
+ */
+async function installWithPathMappingOnly(
+  installContext: FlowInstallContext,
+  packageFormat: PackageFormat,
+  options?: InstallOptions
+): Promise<FlowInstallResult> {
+  const {
+    packageName,
+    packageRoot,
+    workspaceRoot,
+    platform,
+    packageVersion,
+    priority,
+    dryRun
+  } = installContext;
+  
+  const result: FlowInstallResult = {
+    success: true,
+    filesProcessed: 0,
+    filesWritten: 0,
+    conflicts: [],
+    errors: [],
+    targetPaths: [],
+    fileMapping: {}
+  };
+  
+  logger.info(`Installing ${packageName} with path mapping only for ${platform} (native format)`);
+  
+  try {
+    // Check if platform uses flows
+    if (!platformUsesFlows(platform, workspaceRoot)) {
+      logger.warn(`Platform ${platform} does not use flows, falling back to direct installation`);
+      return await installDirectly(installContext, packageFormat);
+    }
+    
+    // Get platform flows
+    let flows = getApplicableFlows(platform, workspaceRoot);
+    if (flows.length === 0) {
+      logger.warn(`No flows defined for platform ${platform}, falling back to direct installation`);
+      return await installDirectly(installContext, packageFormat);
+    }
+    
+    // Strip content transformations, keeping only path mappings
+    flows = stripContentTransformations(flows);
+    
+    logger.debug(`Using ${flows.length} path-mapping-only flows for ${platform}`);
+    
+    // Create flow executor
+    const executor = createFlowExecutor();
+    
+    // Get platform definition
+    const platformDef = getPlatformDefinition(platform, workspaceRoot);
+    
+    // Build flow context
+    const flowContext: FlowContext = {
+      workspaceRoot,
+      packageRoot,
+      platform,
+      packageName,
+      direction: 'install',
+      variables: {
+        name: packageName,
+        version: packageVersion,
+        priority,
+        rootFile: platformDef.rootFile,
+        rootDir: platformDef.rootDir
+      },
+      dryRun
+    };
+    
+    // Discover source files for each flow
+    const flowSources = await discoverFlowSources(flows, packageRoot, flowContext);
+    
+    // Build override map for platform-specific files
+    const overridesByBasePath = new Map<string, Set<Platform>>();
+    for (const [flow, sources] of flowSources) {
+      for (const sourceRel of sources) {
+        const parsed = parseUniversalPath(sourceRel, { allowPlatformSuffix: true });
+        const platformSuffix = parsed?.platformSuffix || extractPlatformSuffixFromFilename(sourceRel);
+        
+        if (platformSuffix) {
+          const baseKey = parsed 
+            ? `${parsed.universalSubdir}/${parsed.relPath}`
+            : stripPlatformSuffixFromFilename(sourceRel);
+          
+          if (!overridesByBasePath.has(baseKey)) {
+            overridesByBasePath.set(baseKey, new Set());
+          }
+          overridesByBasePath.get(baseKey)!.add(platformSuffix as Platform);
+        }
+      }
+    }
+    
+    // Execute flows per source file
+    for (const [flow, sources] of flowSources) {
+      for (const sourceRel of sources) {
+        const sourceAbs = join(packageRoot, sourceRel);
+        
+        // Check for platform-specific file suffix
+        const parsed = parseUniversalPath(sourceRel, { allowPlatformSuffix: true });
+        const platformSuffix = parsed?.platformSuffix || extractPlatformSuffixFromFilename(sourceRel);
+        const isUniversalSubdirFile = parsed !== null;
+        
+        // Skip files not meant for this platform
+        if (platformSuffix) {
+          const filePlatform = platformSuffix as Platform;
+          if (filePlatform !== platform) {
+            logger.debug(`Skipping ${sourceRel} for platform ${platform} (file is for ${filePlatform})`);
+            continue;
+          }
+        } else if (isUniversalSubdirFile && parsed) {
+          const baseKey = `${parsed.universalSubdir}/${parsed.relPath}`;
+          const overridePlatforms = overridesByBasePath.get(baseKey);
+          if (overridePlatforms && overridePlatforms.has(platform)) {
+            logger.debug(`Skipping universal file ${sourceRel} for platform ${platform} (overridden by platform-specific file)`);
+            continue;
+          }
+        } else {
+          const strippedFileName = stripPlatformSuffixFromFilename(sourceRel);
+          const hasOverrideForPlatform = sources.some(s => {
+            const sSuffix = extractPlatformSuffixFromFilename(s);
+            const sStripped = stripPlatformSuffixFromFilename(s);
+            return sSuffix === platform && sStripped === strippedFileName;
+          });
+          
+          if (hasOverrideForPlatform) {
+            logger.debug(`Skipping universal file ${sourceRel} for platform ${platform} (overridden by platform-specific file)`);
+            continue;
+          }
+        }
+        
+        try {
+          // Use suffix-stripped path for flow pattern matching
+          const sourceRelForMapping = parsed ? `${parsed.universalSubdir}/${parsed.relPath}` : sourceRel;
+          const sourceAbsForMapping = parsed ? join(packageRoot, sourceRelForMapping) : sourceAbs;
+          
+          const capturedName = extractCapturedName(sourceRelForMapping, flow.from);
+          
+          const sourceContext: FlowContext = {
+            ...flowContext,
+            variables: {
+              ...flowContext.variables,
+              sourcePath: sourceRelForMapping,
+              sourceDir: dirname(sourceRelForMapping),
+              sourceFile: basename(sourceRelForMapping),
+              ...(capturedName ? { capturedName } : {})
+            }
+          };
+          
+          // Resolve target path
+          const rawToPattern = typeof flow.to === 'string' ? flow.to : Object.keys(flow.to)[0] ?? '';
+          const resolvedToPattern = resolvePattern(rawToPattern, sourceContext, capturedName);
+          const targetAbs = resolveTargetFromGlob(sourceAbsForMapping, flow.from, resolvedToPattern, sourceContext);
+          const targetRel = relative(workspaceRoot, targetAbs);
+          
+          // Create concrete flow
+          const concreteFlow: Flow = {
+            ...flow,
+            from: sourceRel,
+            to: targetRel
+          };
+          
+          const flowResult = await executor.executeFlow(concreteFlow, sourceContext);
+          const wasSkipped = flowResult.warnings?.includes('Flow skipped due to condition');
+          
+          if (!wasSkipped) {
+            result.filesProcessed++;
+          }
+          
+          if (flowResult.success && !wasSkipped) {
+            const target = typeof flowResult.target === 'string' ? flowResult.target : (flowResult.target as any);
+            if (typeof target === 'string') {
+              result.targetPaths.push(target);
+              const targetRelFromWorkspace = relative(workspaceRoot, target);
+              if (!result.fileMapping[sourceRel]) result.fileMapping[sourceRel] = [];
+              
+              const normalizedTargetRel = targetRelFromWorkspace.replace(/\\/g, '/');
+              const isKeyTrackedMerge =
+                (flowResult.merge === 'deep' || flowResult.merge === 'shallow') &&
+                Array.isArray(flowResult.keys);
+              
+              if (isKeyTrackedMerge) {
+                result.fileMapping[sourceRel].push({
+                  target: normalizedTargetRel,
+                  merge: flowResult.merge,
+                  keys: flowResult.keys
+                });
+              } else {
+                result.fileMapping[sourceRel].push(normalizedTargetRel);
+              }
+            }
+            
+            if (!dryRun) {
+              result.filesWritten++;
+            }
+            
+            if (flowResult.conflicts && flowResult.conflicts.length > 0) {
+              for (const conflict of flowResult.conflicts) {
+                const packages: Array<{ packageName: string; priority: number; chosen: boolean }> = [];
+                packages.push({ packageName: conflict.winner, priority: 0, chosen: true });
+                for (const loser of conflict.losers) {
+                  packages.push({ packageName: loser, priority: 0, chosen: false });
+                }
+                result.conflicts.push({
+                  targetPath: conflict.path,
+                  packages,
+                  message: `Conflict in ${conflict.path}: ${conflict.winner} overwrites ${conflict.losers.join(', ')}`
+                });
+              }
+            }
+          } else if (!flowResult.success) {
+            result.success = false;
+            result.errors.push({
+              flow,
+              sourcePath: sourceRel,
+              error: flowResult.error || new Error('Unknown error'),
+              message: `Failed to execute flow for ${sourceRel}: ${flowResult.error?.message || 'Unknown error'}`
+            });
+          }
+        } catch (error) {
+          result.success = false;
+          result.errors.push({
+            flow,
+            sourcePath: sourceRel,
+            error: error as Error,
+            message: `Error processing ${sourceRel}: ${(error as Error).message}`
+          });
+        }
+      }
+    }
+    
+    // Log results
+    if (result.filesProcessed > 0) {
+      logger.info(
+        `Processed ${result.filesProcessed} files for ${packageName} on platform ${platform}` +
+        (dryRun ? ' (dry run)' : `, wrote ${result.filesWritten} files`)
+      );
+    }
+    
+    // Log conflicts
+    if (result.conflicts.length > 0) {
+      logger.warn(`Detected ${result.conflicts.length} conflicts during installation`);
+      for (const conflict of result.conflicts) {
+        const winner = conflict.packages.find(p => p.chosen);
+        logger.warn(
+          `  ${toTildePath(conflict.targetPath)}: ${winner?.packageName} (priority ${winner?.priority}) overwrites ` +
+          `${conflict.packages.find(p => !p.chosen)?.packageName}`
+        );
+      }
+    }
+    
+    // Log errors
+    if (result.errors.length > 0) {
+      logger.error(`Encountered ${result.errors.length} errors during installation`);
+      for (const error of result.errors) {
+        logger.error(`  ${error.sourcePath}: ${error.message}`);
+      }
+    }
+    
+  } catch (error) {
+    result.success = false;
+    logger.error(`Failed to install package ${packageName} with path mapping: ${(error as Error).message}`);
+    result.errors.push({
+      flow: { from: packageRoot, to: workspaceRoot },
+      sourcePath: packageRoot,
+      error: error as Error,
+      message: `Failed to install with path mapping: ${(error as Error).message}`
+    });
+  }
+  
+  return result;
+}
+
+/**
+ * Strip content transformations from flows, keeping only path mappings
+ * 
+ * Removes:
+ * - map operations (frontmatter transformations)
+ * - pipe operations (except format converters needed for file type changes)
+ * 
+ * Keeps:
+ * - from/to path patterns (the core path mapping)
+ * - merge strategies (for multi-package composition)
+ * - when conditions (for conditional flows)
+ */
+function stripContentTransformations(flows: Flow[]): Flow[] {
+  return flows.map(flow => {
+    const strippedFlow: Flow = {
+      from: flow.from,
+      to: flow.to
+    };
+    
+    // Keep merge strategy if defined
+    if (flow.merge) {
+      strippedFlow.merge = flow.merge;
+    }
+    
+    // Keep when conditions
+    if (flow.when) {
+      strippedFlow.when = flow.when;
+    }
+    
+    // Keep only format conversion pipes (yaml, json, toml, etc.)
+    // Skip filtering/transformation pipes
+    if (flow.pipe && flow.pipe.length > 0) {
+      const formatConverters = ['yaml', 'json', 'jsonc', 'toml', 'xml', 'ini', 'filter-comments'];
+      const filteredPipes = flow.pipe.filter(p => formatConverters.includes(p));
+      if (filteredPipes.length > 0) {
+        strippedFlow.pipe = filteredPipes;
+      }
+    }
+    
+    // Explicitly skip map transformations (commented for clarity)
+    // strippedFlow.map = undefined;
+    
+    return strippedFlow;
+  });
+}
+
+/**
+ * Install package with format conversion
+ * Converts from source platform format → universal → target platform format
+ */
+async function installWithConversion(
+  installContext: FlowInstallContext,
+  packageFormat: PackageFormat,
+  options?: InstallOptions
+): Promise<FlowInstallResult> {
+  const {
+    packageName,
+    packageRoot,
+    workspaceRoot,
+    platform,
+    dryRun
+  } = installContext;
+  
+  const result: FlowInstallResult = {
+    success: true,
+    filesProcessed: 0,
+    filesWritten: 0,
+    conflicts: [],
+    errors: [],
+    targetPaths: [],
+    fileMapping: {}
+  };
+  
+  try {
+    // Step 1: Load package files
+    const { readTextFile } = await import('../../utils/fs.js');
+    const packageFiles: Array<{ path: string; content: string }> = [];
+    
+    for await (const sourcePath of walkFiles(packageRoot)) {
+      const relativePath = relative(packageRoot, sourcePath);
+      
+      // Skip metadata
+      if (relativePath.startsWith('.openpackage/') || relativePath === 'openpackage.yml') {
+        continue;
+      }
+      
+      const content = await readTextFile(sourcePath);
+      packageFiles.push({ path: relativePath, content, encoding: 'utf8' } as any);
+    }
+    
+    // Step 2: Create package object
+    const pkg: Package = {
+      metadata: {
+        name: packageName,
+        version: installContext.packageVersion
+      },
+      files: packageFiles,
+      _format: packageFormat
+    };
+    
+    // Step 3: Convert from source platform format to universal format
+    const converter = createPlatformConverter(workspaceRoot);
+    const conversionResult = await converter.convert(pkg, platform, { dryRun });
+    
+    if (!conversionResult.success || !conversionResult.convertedPackage) {
+      logger.error('Package conversion failed', { 
+        package: packageName,
+        stages: conversionResult.stages 
+      });
+      
+      result.success = false;
+      result.errors.push({
+        flow: { from: packageRoot, to: workspaceRoot },
+        sourcePath: packageRoot,
+        error: new Error('Conversion failed'),
+        message: 'Failed to convert package format'
+      });
+      
+      return result;
+    }
+    
+    logger.info(`Conversion to universal format complete (${conversionResult.stages.length} stages), now applying ${platform} platform flows`);
+    
+    // Step 4: Write converted (universal format) files to temporary directory
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
+    const { writeTextFile, ensureDir: ensureDirUtil } = await import('../../utils/fs.js');
+    
+    let tempPackageRoot: string | null = null;
+    
+    try {
+      tempPackageRoot = await mkdtemp(join(tmpdir(), 'opkg-converted-'));
+      
+      // Write all converted files to temp directory
+      for (const file of conversionResult.convertedPackage.files) {
+        const filePath = join(tempPackageRoot, file.path);
+        await ensureDirUtil(dirname(filePath));
+        await writeTextFile(filePath, file.content);
+      }
+      
+      logger.debug(`Wrote ${conversionResult.convertedPackage.files.length} converted files to temp directory`, { 
+        tempPackageRoot 
+      });
+      
+      // Step 5: Install from temp directory using standard flow-based installation
+      // This will apply the target platform flows to the now-universal-format content
+      const convertedInstallContext: FlowInstallContext = {
+        ...installContext,
+        packageRoot: tempPackageRoot,
+        // Important: Clear packageFormat so it gets re-detected as universal format
+        packageFormat: undefined
+      };
+      
+      // Recursively call installPackageWithFlows, but with converted package root
+      // This will apply standard platform flows (Universal → Target Platform)
+      const installResult = await installPackageWithFlows(convertedInstallContext, options);
+      
+      // Cleanup temp directory
+      if (tempPackageRoot) {
+        await rm(tempPackageRoot, { recursive: true, force: true });
+      }
+      
+      return installResult;
+      
+    } catch (error) {
+      // Cleanup on error
+      if (tempPackageRoot) {
+        try {
+          await rm(tempPackageRoot, { recursive: true, force: true });
+        } catch (cleanupError) {
+          logger.warn('Failed to cleanup temp directory after error', { tempPackageRoot, cleanupError });
+        }
+      }
+      
+      logger.error('Failed to install converted package', { packageName, error });
+      result.success = false;
+      result.errors.push({
+        flow: { from: packageRoot, to: workspaceRoot },
+        sourcePath: packageRoot,
+        error: error as Error,
+        message: `Failed to install converted package: ${(error as Error).message}`
+      });
+      
+      return result;
+    }
+    
+  } catch (error) {
+    logger.error('Conversion installation failed', { packageName, error });
+    result.success = false;
+    result.errors.push({
+      flow: { from: packageRoot, to: workspaceRoot },
+      sourcePath: packageRoot,
+      error: error as Error,
+      message: `Failed to install with conversion: ${(error as Error).message}`
+    });
+    
+    return result;
+  }
 }
 
 // ============================================================================

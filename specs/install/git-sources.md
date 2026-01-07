@@ -96,11 +96,19 @@ When `subdirectory` is specified:
 
 ## 4. Claude Code plugin support
 
+**See also:** [Install Behavior §9](./install-behavior.md#9-claude-code-plugin-support) for complete plugin install flow with Universal Converter integration.
+
 ### 4.1 Plugin detection
 
-When installing from a git source (with or without subdirectory), the system detects Claude Code plugins by checking for:
-- **Individual plugins**: `.claude-plugin/plugin.json`
-- **Plugin marketplaces**: `.claude-plugin/marketplace.json`
+When installing from a git source (with or without subdirectory), the system detects:
+
+1. **Claude Code plugin manifests:**
+   - **Individual plugins**: `.claude-plugin/plugin.json`
+   - **Plugin marketplaces**: `.claude-plugin/marketplace.json`
+
+2. **Package format** (via Universal Converter):
+   - **Platform-specific**: Files in platform directories (`.claude/`, `.cursor/`, etc.)
+   - **Universal**: Files in universal subdirectories (`commands/`, `agents/`, etc.)
 
 Detection happens automatically after cloning, before attempting to load as an OpenPackage.
 
@@ -112,12 +120,18 @@ When an individual plugin is detected:
    - `name` and `version` from `plugin.json` become package metadata
    - `description`, `author`, `repository`, etc. are preserved
 3. All plugin files are collected (commands/, agents/, skills/, hooks/, .mcp.json, .lsp.json, etc.)
-4. Files are installed to platform-specific directories via the platform mapping system:
+4. **Package format is detected** and appropriate installation strategy selected:
+   - **Direct AS-IS**: Source platform = target platform (fastest)
+   - **Cross-platform conversion**: Source ≠ target (via Universal Converter)
+   - **Standard flows**: Universal format packages
+5. Files are installed to platform-specific directories:
    - `commands/` → `.claude/commands/`, `.cursor/commands/`, etc.
    - `agents/` → `.claude/agents/`, `.cursor/agents/`, etc.
    - Root files (`.mcp.json`, `.lsp.json`) → platform roots
-5. The dependency is tracked in `openpackage.yml` with its git source (not as a registry version).
-6. No registry copy is created (git repository remains source of truth).
+6. The dependency is tracked in `openpackage.yml` with its git source (not as a registry version).
+7. No registry copy is created (git repository remains source of truth).
+
+**See:** [Universal Platform Converter](../platforms/universal-converter.md) for cross-platform conversion details.
 
 **Example:**
 ```bash

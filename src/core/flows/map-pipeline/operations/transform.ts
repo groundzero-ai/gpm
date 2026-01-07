@@ -93,6 +93,22 @@ function applyTransformStep(value: any, step: TransformStep): any {
     return applyJoin(value, step.join);
   }
 
+  if ('split' in step) {
+    return applySplit(value, step.split);
+  }
+
+  if ('arrayToObject' in step) {
+    return applyArrayToObject(value, step.arrayToObject);
+  }
+
+  if ('fromEntries' in step) {
+    return applyFromEntries(value);
+  }
+
+  if ('replace' in step) {
+    return applyReplace(value, step.replace);
+  }
+
   // Unknown step - return unchanged
   return value;
 }
@@ -205,6 +221,88 @@ function applyJoin(value: any, separator: string): any {
 }
 
 /**
+ * Split step: { "split": ", " }
+ * Split string to array (inverse of join)
+ */
+function applySplit(value: any, separator: string): any {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return value.split(separator).map(s => s.trim()).filter(s => s.length > 0);
+}
+
+/**
+ * ArrayToObject step: { "arrayToObject": { "value": true } }
+ * Convert array of strings to object with specified value (inverse of keys)
+ * 
+ * Example: ["Glob", "Grep", "LS"] -> { Glob: true, Grep: true, LS: true }
+ */
+function applyArrayToObject(value: any, config: { value: any }): any {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  const result: any = {};
+  for (const key of value) {
+    if (typeof key === 'string') {
+      result[key] = config.value;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * FromEntries step: { "fromEntries": true }
+ * Convert entries array to object (inverse of entries)
+ * 
+ * Example: [["key1", "val1"], ["key2", "val2"]] -> { key1: "val1", key2: "val2" }
+ */
+function applyFromEntries(value: any): any {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  const result: any = {};
+  for (const entry of value) {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      result[entry[0]] = entry[1];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Replace step: { "replace": { "pattern": "...", "with": "...", "flags": "g" } }
+ * String replacement using regex with capture group support
+ * 
+ * Examples:
+ * - { "replace": { "pattern": "^anthropic/", "with": "" } }
+ *   "anthropic/claude-sonnet" -> "claude-sonnet"
+ * 
+ * - { "replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+ *   "claude-4.5" -> "claude-4-5"
+ * 
+ * - { "replace": { "pattern": "^(.*)$", "with": "anthropic/$1" } }
+ *   "claude-sonnet" -> "anthropic/claude-sonnet"
+ */
+function applyReplace(
+  value: any, 
+  config: { pattern: string; with: string; flags?: string }
+): any {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const flags = config.flags || '';
+  const regex = new RegExp(config.pattern, flags);
+  
+  return value.replace(regex, config.with);
+}
+
+/**
  * Validate $transform operation
  */
 export function validateTransform(operation: TransformOperation): { valid: boolean; errors: string[] } {
@@ -245,7 +343,7 @@ export function validateTransform(operation: TransformOperation): { valid: boole
     }
 
     const operation = stepKeys[0];
-    const validOps = ['filter', 'keys', 'values', 'entries', 'map', 'join'];
+    const validOps = ['filter', 'keys', 'values', 'entries', 'map', 'join', 'split', 'arrayToObject', 'fromEntries', 'replace'];
     
     if (!validOps.includes(operation)) {
       errors.push(
@@ -269,6 +367,39 @@ export function validateTransform(operation: TransformOperation): { valid: boole
       const separator = (step as any).join;
       if (typeof separator !== 'string') {
         errors.push(`$transform.steps[${i}].join must be a string`);
+      }
+    }
+
+    if (operation === 'split') {
+      const separator = (step as any).split;
+      if (typeof separator !== 'string') {
+        errors.push(`$transform.steps[${i}].split must be a string`);
+      }
+    }
+
+    if (operation === 'arrayToObject') {
+      const config = (step as any).arrayToObject;
+      if (!config || typeof config !== 'object') {
+        errors.push(`$transform.steps[${i}].arrayToObject must be an object`);
+      } else if (!('value' in config)) {
+        errors.push(`$transform.steps[${i}].arrayToObject must have a 'value' property`);
+      }
+    }
+
+    if (operation === 'replace') {
+      const config = (step as any).replace;
+      if (!config || typeof config !== 'object') {
+        errors.push(`$transform.steps[${i}].replace must be an object`);
+      } else {
+        if (typeof config.pattern !== 'string') {
+          errors.push(`$transform.steps[${i}].replace.pattern must be a string`);
+        }
+        if (typeof config.with !== 'string') {
+          errors.push(`$transform.steps[${i}].replace.with must be a string`);
+        }
+        if (config.flags !== undefined && typeof config.flags !== 'string') {
+          errors.push(`$transform.steps[${i}].replace.flags must be a string`);
+        }
       }
     }
   }

@@ -439,16 +439,29 @@ This section ties pre-release version selection to **how content is loaded** whe
 
 ## 9. Claude Code plugin support
 
-OpenPackage supports installing **Claude Code plugins** directly from git repositories and local paths. Plugin detection and transformation happens automatically during the install flow.
+OpenPackage supports installing **Claude Code plugins** and other **platform-specific packages** directly from git repositories and local paths. The **Universal Platform Converter** automatically detects package format and converts between platforms as needed during the install flow.
+
+**Key features:**
+- **Automatic format detection** - Identifies universal vs platform-specific packages
+- **Direct installation** - Claude plugins install AS-IS to Claude platform (no conversion)
+- **Cross-platform conversion** - Claude plugins can be installed to Cursor, OpenCode, etc. by automatically converting through universal format
+- **Bidirectional flows** - Platform transformations are automatically inverted for reverse conversion
+
+See [Platform Universal Converter](../platforms/universal-converter.md) for complete technical details.
 
 ### 9.1 Plugin detection
 
-After cloning a git repository or resolving a local path, the install pipeline checks for Claude Code plugin manifests:
+After cloning a git repository or resolving a local path, the install pipeline checks for:
 
-- **Individual plugin**: `.claude-plugin/plugin.json` at the package root
-- **Plugin marketplace**: `.claude-plugin/marketplace.json` at the package root
+1. **Claude Code plugin manifests:**
+   - **Individual plugin**: `.claude-plugin/plugin.json` at the package root
+   - **Plugin marketplace**: `.claude-plugin/marketplace.json` at the package root
 
-If either manifest is found, special plugin handling is triggered instead of treating the source as a standard OpenPackage.
+2. **Package format detection:**
+   - **Platform-specific**: Files in platform directories (`.claude/`, `.cursor/`, etc.)
+   - **Universal**: Files in universal subdirectories (`commands/`, `agents/`, `rules/`, etc.)
+
+If a Claude plugin manifest is found, special plugin handling is triggered. Otherwise, format detection determines installation strategy.
 
 ### 9.2 Individual plugin install flow
 
@@ -467,16 +480,28 @@ When an individual plugin is detected:
    - Original directory structure is preserved (commands/, agents/, skills/, hooks/, etc.)
    - Junk files (`.DS_Store`, `.git/`, etc.) are filtered out
 
-4. **Install via platform mapping**
-   - Plugin files are installed using the standard platform mapping system
-   - Universal subdirs map to platform-specific directories:
+4. **Detect package format**
+   - **Universal format**: Standard OpenPackage with `commands/`, `agents/`, etc.
+   - **Platform-specific format**: Claude-specific structure with `.claude/` directories
+   - Detection confidence score calculated based on file distribution
+
+5. **Install with Universal Converter**
+   - **Strategy selection:**
+     - **Direct installation (AS-IS)**: Source platform = target platform (e.g., Claude → Claude)
+       - Files copied without transformation for fastest install
+     - **Cross-platform conversion**: Source ≠ target (e.g., Claude → Cursor)
+       - Stage 1: Invert source platform flows (Claude → Universal)
+       - Stage 2: Apply target platform flows (Universal → Cursor)
+     - **Standard installation**: Universal packages use existing flow system
+   
+   - **Platform mappings** (for universal or converted packages):
      - `commands/` → `.claude/commands/`, `.cursor/commands/`, etc.
      - `agents/` → `.claude/agents/`, `.cursor/agents/`, etc.
      - `skills/` → `.claude/skills/`, `.cursor/skills/`, etc.
      - `hooks/` → `.claude/hooks/`, `.cursor/hooks/`, etc.
    - Root files (`.mcp.json`, `.lsp.json`) install to platform roots
 
-5. **Track as git dependency**
+6. **Track as git dependency**
    - Persisted in `openpackage.yml` with git source:
      ```yaml
      packages:
@@ -485,12 +510,59 @@ When an individual plugin is detected:
          subdirectory: plugins/commit-commands  # If from subdirectory
      ```
 
-**Example:**
+**Examples:**
+
 ```bash
-# Install individual plugin from subdirectory
+# Install Claude plugin to Claude platform (direct AS-IS installation)
+opkg install github:user/my-claude-plugin --platforms claude
+```
+Console output:
+```
+🔌 Detected Claude Code plugin
+📦 Installing plugin: my-plugin@1.0.0
+✓ Installing my-plugin AS-IS for claude platform (matching format)
+✓ Added files: 5
+   ├── .claude/commands/review.md
+   ├── .claude/commands/test.md
+   └── ...
+```
+
+```bash
+# Install Claude plugin to Cursor platform (cross-platform conversion)
+opkg install github:user/my-claude-plugin --platforms cursor
+```
+Console output:
+```
+🔌 Detected Claude Code plugin
+📦 Installing plugin: my-plugin@1.0.0
+🔄 Converting my-plugin from claude to cursor format
+✓ Conversion stage: platform-to-universal (5 files)
+✓ Applying cursor platform flows
+✓ Added files: 5
+   ├── .cursor/commands/review.md
+   ├── .cursor/commands/test.md
+   └── ...
+```
+
+```bash
+# Install to multiple platforms (mixed strategies)
+opkg install github:user/my-claude-plugin --platforms claude,cursor,opencode
+```
+Console output:
+```
+🔌 Detected Claude Code plugin
+📦 Installing plugin: my-plugin@1.0.0
+✓ Installing AS-IS for claude platform (matching format)
+🔄 Converting to cursor format
+🔄 Converting to opencode format
+✓ Added 15 files across 3 platforms
+```
+
+```bash
+# Legacy: Install individual plugin from subdirectory
 opkg install github:anthropics/claude-code#subdirectory=plugins/commit-commands
 
-# Install plugin from dedicated repo
+# Legacy: Install plugin from dedicated repo
 opkg install github:user/my-claude-plugin
 ```
 

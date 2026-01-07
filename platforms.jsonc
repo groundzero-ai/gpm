@@ -71,16 +71,19 @@
         "map": [
           // Set name from context
           { "$set": { "name": "$$filename" } },
-          // Transform model
+          // Transform model conditionally:
+          // - If it starts with "anthropic/", apply regex transformations
+          // - Otherwise, set to "default"
           {
-            "$switch": {
+            "$transform": {
               "field": "model",
-              "cases": [
-                { "pattern": "anthropic/claude-sonnet-*", "value": "sonnet" },
-                { "pattern": "anthropic/claude-opus-*", "value": "opus" },
-                { "pattern": "anthropic/claude-haiku-*", "value": "haiku" }
-              ],
-              "default": "inherit"
+              "steps": [
+                // First, check if it's an Anthropic model. If not, replace with "default"
+                { "replace": { "pattern": "^(?!anthropic/).*$", "with": "default" } },
+                // Then apply Anthropic transformations (these only affect anthropic/* models)
+                { "replace": { "pattern": "^anthropic/", "with": "" } },
+                { "replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+              ]
             }
           },
           // Transform tools

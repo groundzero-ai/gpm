@@ -277,7 +277,48 @@ Prevent package collisions with automatic namespacing:
 - **`src/core/flows/flow-executor.ts`** - Flow execution engine
 - **`src/core/flows/flow-transforms.ts`** - Transform implementations
 - **`src/core/flows/flow-key-mapper.ts`** - Key mapping logic
+- **`src/core/flows/flow-inverter.ts`** - Flow inversion for cross-platform conversion
+- **`src/core/flows/platform-converter.ts`** - Universal converter orchestration
+- **`src/core/install/format-detector.ts`** - Package format detection
 - **`schemas/platforms-v1.json`** - JSON Schema definition
+
+## Universal Platform Converter
+
+**New in:** Commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`
+
+The **Universal Platform Converter** extends the platform system to support **cross-platform package conversion**. This enables installing platform-specific packages (like Claude Code plugins) to any platform.
+
+### Key Capabilities
+
+**1. Format Detection**
+- Automatically identifies universal vs platform-specific packages
+- Analyzes file paths to determine source format
+- Calculates confidence scores based on file distribution
+
+**2. Direct Installation (AS-IS)**
+- When source platform = target platform (e.g., Claude plugin → Claude)
+- Files copied without transformation for maximum compatibility
+- Fastest installation path
+
+**3. Cross-Platform Conversion**
+- When source platform ≠ target platform (e.g., Claude plugin → Cursor)
+- Automatically inverts source platform flows (platform → universal)
+- Then applies target platform flows (universal → platform)
+- Enables full interoperability
+
+### Example: Install Claude Plugin to Cursor
+
+```bash
+opkg install github:user/claude-plugin --platforms cursor
+```
+
+**What happens:**
+1. **Detect format:** Plugin has `.claude/` directories → Claude format
+2. **Invert Claude flows:** `.claude/commands/*.md` → `commands/*.md`
+3. **Apply Cursor flows:** `commands/*.md` → `.cursor/commands/*.md`
+4. **Result:** Plugin works in Cursor with proper directory structure
+
+**See:** [Universal Converter](./universal-converter.md) for complete technical documentation.
 
 ## Use Cases
 
@@ -293,12 +334,16 @@ Compose MCP server configurations from multiple packages without conflicts.
 ### 4. Agent Definition Conversion
 Map universal agent schemas to platform-specific formats.
 
-### 5. Custom Platform Support
+### 5. Cross-Platform Plugin Installation
+Install Claude plugins to Cursor, OpenCode, or any other platform.
+
+### 6. Custom Platform Support
 Add flows for new/proprietary platforms via workspace overrides.
 
 ## Next Steps
 
 - **Learn flow syntax:** See [Flows](./flows.md)
+- **Cross-platform conversion:** See [Universal Converter](./universal-converter.md)
 - **View examples:** See [Examples](./examples.md)
 - **Configure platforms:** See [Configuration](./configuration.md)
 - **Debug issues:** See [Troubleshooting](./troubleshooting.md)

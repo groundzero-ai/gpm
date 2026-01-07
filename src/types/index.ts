@@ -61,6 +61,11 @@ export interface PackageFile {
 export interface Package {
   metadata: PackageYml;
   files: PackageFile[];
+  /**
+   * Internal format metadata (for conversion system)
+   * Not serialized or persisted
+   */
+  _format?: any;  // Import type from format-detector to avoid circular deps
 }
 
 export interface PackageRepository {

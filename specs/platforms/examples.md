@@ -971,6 +971,119 @@ DEBUG=opkg:flows opkg install @user/package
 }
 ```
 
+## Cross-Platform Conversion Examples
+
+**New in:** Commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`
+
+The **Universal Platform Converter** enables installing platform-specific packages to any platform.
+
+### Example 1: Install Claude Plugin to Claude (Direct AS-IS)
+
+```bash
+opkg install github:user/claude-plugin --platforms claude
+```
+
+**Source format:** Claude-specific (`.claude/` directories)  
+**Target platform:** claude  
+**Strategy:** Direct installation (no conversion)
+
+**Console output:**
+```
+🔌 Detected Claude Code plugin
+📦 Installing plugin: my-plugin@1.0.0
+✓ Installing my-plugin AS-IS for claude platform (matching format)
+✓ Added files: 5
+   ├── .claude/commands/review.md
+   ├── .claude/commands/test.md
+   └── ...
+```
+
+**Why AS-IS:** Source and target platforms match, so no transformation is needed. This is the fastest and most compatible installation method.
+
+### Example 2: Install Claude Plugin to Cursor (Cross-Platform)
+
+```bash
+opkg install github:user/claude-plugin --platforms cursor
+```
+
+**Source format:** Claude-specific (`.claude/` directories)  
+**Target platform:** cursor  
+**Strategy:** Convert via universal
+
+**Conversion pipeline:**
+1. **Detect format:** Identifies Claude platform-specific structure
+2. **Invert Claude flows:** `.claude/commands/*.md` → `commands/*.md`
+3. **Apply Cursor flows:** `commands/*.md` → `.cursor/commands/*.md`
+
+**Console output:**
+```
+🔌 Detected Claude Code plugin
+📦 Installing plugin: my-plugin@1.0.0
+🔄 Converting my-plugin from claude to cursor format
+✓ Conversion stage: platform-to-universal (5 files)
+✓ Applying cursor platform flows
+✓ Added files: 5
+   ├── .cursor/commands/review.md
+   ├── .cursor/commands/test.md
+   └── ...
+```
+
+### Example 3: Install to Multiple Platforms (Mixed Strategies)
+
+```bash
+opkg install github:user/claude-plugin --platforms claude,cursor,opencode
+```
+
+**Result:** Plugin installed to all three platforms with appropriate strategies:
+- **claude:** Direct AS-IS installation
+- **cursor:** Converted from Claude format
+- **opencode:** Converted from Claude format
+
+**Console output:**
+```
+🔌 Detected Claude Code plugin
+📦 Installing plugin: my-plugin@1.0.0
+✓ Installing AS-IS for claude platform (matching format)
+🔄 Converting to cursor format
+🔄 Converting to opencode format
+✓ Added 15 files across 3 platforms
+```
+
+### Example 4: Universal Package to All Platforms
+
+```bash
+opkg install @user/universal-rules --platforms cursor,claude,opencode
+```
+
+**Source format:** Universal (standard `commands/`, `agents/` structure)  
+**Strategy:** Standard flow-based installation (existing behavior)
+
+**No conversion needed** - universal packages work with the standard flow system.
+
+### How It Works
+
+The converter uses **flow inversion** to reverse platform transformations:
+
+**Original Claude flow:**
+```jsonc
+{
+  "from": "commands/**/*.md",
+  "to": ".claude/commands/**/*.md"
+}
+```
+
+**Automatically inverted for conversion:**
+```jsonc
+{
+  "from": ".claude/commands/**/*.md",
+  "to": "commands/**/*.md"
+}
+```
+
+This inverted flow converts Claude-specific files back to universal format, which can then be transformed to any target platform.
+
+**See:** [Universal Converter](./universal-converter.md) for complete technical details.
+
 ## Best Practices
 
 ### 1. Start Simple
@@ -1027,6 +1140,7 @@ Add comments explaining intent:
 ## Next Steps
 
 - **Learn flow syntax:** [Flows](./flows.md)
+- **Cross-platform conversion:** [Universal Converter](./universal-converter.md)
 - **View flow options:** [Flow Reference](./flow-reference.md)
 - **Configure platforms:** [Configuration](./configuration.md)
 - **Debug issues:** [Troubleshooting](./troubleshooting.md)

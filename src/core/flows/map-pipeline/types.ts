@@ -144,7 +144,11 @@ export type TransformStep =
   | ValuesStep
   | EntriesStep
   | MapStep
-  | JoinStep;
+  | JoinStep
+  | SplitStep
+  | ArrayToObjectStep
+  | FromEntriesStep
+  | ReplaceStep;
 
 /**
  * Filter entries by key or value
@@ -192,6 +196,49 @@ export interface MapStep {
  */
 export interface JoinStep {
   join: string;
+}
+
+/**
+ * Split string to array (inverse of join)
+ */
+export interface SplitStep {
+  split: string;
+}
+
+/**
+ * Convert array to object with specified value (inverse of keys)
+ */
+export interface ArrayToObjectStep {
+  arrayToObject: {
+    value: any;
+  };
+}
+
+/**
+ * Convert entries array to object (inverse of entries)
+ */
+export interface FromEntriesStep {
+  fromEntries: true;
+}
+
+/**
+ * Replace using regex with capture group support
+ * 
+ * Examples:
+ * - { "replace": { "pattern": "^anthropic/", "with": "" } }
+ * - { "replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+ */
+export interface ReplaceStep {
+  replace: {
+    /** Regex pattern to match */
+    pattern: string;
+    
+    /** Replacement string (supports $1, $2 capture groups) */
+    with: string;
+    
+    /** Optional regex flags (e.g., "g", "i") */
+    flags?: string;
+  };
 }
 
 /**

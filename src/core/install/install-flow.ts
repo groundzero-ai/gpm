@@ -13,7 +13,7 @@ import { createWorkspacePackageYml } from '../../utils/package-management.js';
 import { checkAndHandleAllPackageConflicts } from '../../utils/install-conflict-handler.js';
 import { discoverAndCategorizeFiles } from '../../utils/install-file-discovery.js';
 import { installRootFilesFromMap } from '../../utils/root-file-installer.js';
-import { installPackageByIndex, type IndexInstallResult } from '../../utils/index-based-installer.js';
+import { installPackageByIndexWithFlows as installPackageByIndex, type IndexInstallResult } from '../../utils/flow-index-installer.js';
 import { promptVersionSelection } from '../../utils/prompts.js';
 import { ensureDir, exists, writeTextFile } from '../../utils/fs.js';
 import { dirname, join } from 'path';
@@ -214,7 +214,8 @@ export async function performIndexBasedInstallationPhases(params: InstallationPh
         platforms,
         options,
         filtersForPackage,
-        resolved.contentRoot  // Pass contentRoot for path-based packages
+        resolved.contentRoot,  // Pass contentRoot for path-based packages
+        resolved.pkg._format   // Pass format metadata from Package object
       );
 
       totalInstalled += installResult.installed;

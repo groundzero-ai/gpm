@@ -162,6 +162,33 @@
                       },
                       "required": ["join"],
                       "additionalProperties": false
+                    },
+                    {
+                      "title": "replace step",
+                      "properties": {
+                        "replace": {
+                          "type": "object",
+                          "description": "Regex replacement with capture group support",
+                          "required": ["pattern", "with"],
+                          "properties": {
+                            "pattern": {
+                              "type": "string",
+                              "description": "Regex pattern to match"
+                            },
+                            "with": {
+                              "type": "string",
+                              "description": "Replacement string (supports $1, $2 capture groups)"
+                            },
+                            "flags": {
+                              "type": "string",
+                              "description": "Optional regex flags (e.g., 'g', 'i')"
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["replace"],
+                      "additionalProperties": false
                     }
                   ]
                 }

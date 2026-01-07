@@ -80,6 +80,7 @@ Consult git history (e.g., commit 9d23bf2) for prior version details. See [Archi
   - Platforms: `platforms/` - Platform-specific transformations and flows
     - Overview: `platforms/overview.md`
     - Flows: `platforms/flows.md`
+    - Universal Converter: `platforms/universal-converter.md` - Cross-platform package conversion
     - Map Pipeline: `platforms/map-pipeline.md`
     - Configuration: `platforms/configuration.md`
   - CLI flags/options: `cli-options.md`

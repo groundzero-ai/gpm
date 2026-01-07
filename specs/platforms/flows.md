@@ -1358,9 +1358,50 @@ Prevent unintended conflicts.
 }
 ```
 
+## Flow Inversion & Universal Converter
+
+**New in:** Commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`
+
+Flows can be **automatically inverted** to enable cross-platform package conversion. This powers the **Universal Platform Converter** which allows installing platform-specific packages (like Claude plugins) to any platform.
+
+**Example scenario:**
+- Install a Claude Code plugin (with `.claude/` directories)
+- To Cursor platform (needs `.cursor/` directories)
+- System automatically inverts Claude flows to convert `.claude/` → universal
+- Then applies Cursor flows to convert universal → `.cursor/`
+
+**Inverted flow:**
+```jsonc
+// Original Claude flow
+{
+  "from": "commands/**/*.md",
+  "to": ".claude/commands/**/*.md"
+}
+
+// Automatically inverted for reverse conversion
+{
+  "from": ".claude/commands/**/*.md",
+  "to": "commands/**/*.md"
+}
+```
+
+**Reversible operations:**
+- Path swapping (`from` ↔ `to`)
+- `$rename` key pairs
+- `$copy` from/to
+- Basic `$transform` steps (join/split, keys/arrayToObject)
+
+**Non-reversible (skipped):**
+- `$set` and `$unset` (lose original values)
+- Complex transforms with lossy steps
+- Filters and validators
+
+**See:** [Universal Converter](./universal-converter.md) for complete details on cross-platform conversion.
+
 ## Next Steps
 
 - **View complete flow options:** See [Flow Reference](./flow-reference.md)
+- **Cross-platform conversion:** See [Universal Converter](./universal-converter.md)
 - **See practical examples:** See [Examples](./examples.md)
 - **Learn key mapping:** See [Flow Reference](./flow-reference.md#key-mapping)
 - **Debug flows:** See [Troubleshooting](./troubleshooting.md)

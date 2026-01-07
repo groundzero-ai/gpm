@@ -64,7 +64,8 @@ export async function installPackageByIndexWithFlows(
   platforms: Platform[],
   options: InstallOptions,
   includePaths?: string[],
-  contentRoot?: string
+  contentRoot?: string,
+  packageFormat?: any  // Optional format metadata from plugin transformer
 ): Promise<IndexInstallResult> {
   logger.debug(`Installing ${packageName}@${version} with flows for platforms: ${platforms.join(', ')}`);
 
@@ -101,7 +102,8 @@ export async function installPackageByIndexWithFlows(
       platform,
       packageVersion: version,
       priority: 0, // Priority is calculated from dependency graph during multi-package installs
-      dryRun: options.dryRun ?? false
+      dryRun: options.dryRun ?? false,
+      packageFormat  // Pass format metadata if available
     };
 
     try {

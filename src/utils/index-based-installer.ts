@@ -1115,6 +1115,28 @@ export async function installPackageByIndex(
   if (hasFlowPlatforms) {
     logger.debug(`Using flow-based installer for ${packageName} on platforms: ${platforms.join(', ')}`);
     
+    // Load package to get format metadata (important for plugin conversion)
+    let packageFormat: any = undefined;
+    if (contentRoot) {
+      try {
+        const { loadPackageFromPath } = await import('../core/install/path-package-loader.js');
+        const pkg = await loadPackageFromPath(contentRoot);
+        
+        // Extract format metadata if available (set by plugin transformer)
+        if (pkg._format) {
+          packageFormat = pkg._format;
+          logger.debug(`Package format detected from _format field`, { 
+            type: packageFormat.type, 
+            platform: packageFormat.platform 
+          });
+        }
+      } catch (error) {
+        // If we can't load the package for format detection, that's OK
+        // Format will be detected from files instead
+        logger.debug(`Could not load package for format detection: ${(error as Error).message}`);
+      }
+    }
+    
     // Delegate to flow-based installer
     const { installPackageByIndexWithFlows } = await import('./flow-index-installer.js');
     return await installPackageByIndexWithFlows(
@@ -1124,7 +1146,8 @@ export async function installPackageByIndex(
       platforms,
       options,
       includePaths,
-      contentRoot
+      contentRoot,
+      packageFormat  // Pass format metadata
     );
   }
   

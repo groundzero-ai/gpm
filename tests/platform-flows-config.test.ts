@@ -297,10 +297,10 @@ console.log('platform-flows-config tests starting')
           extract: '$.frontmatter',
           pick: ['name', 'description', 'categories'],
           omit: ['deprecated'],
-          map: {
-            name: { to: 'agent.name' },
-            categories: { to: 'agent.categories', transform: 'array-unique' }
-          },
+          map: [
+            { $rename: { name: 'agent.name' } },
+            { $rename: { categories: 'agent.categories' } }
+          ],
           pipe: ['filter-empty', 'filter-null'],
           embed: 'agent',
           merge: 'deep',

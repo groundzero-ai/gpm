@@ -127,6 +127,75 @@ This is a test command.
     assert.ok(commandFile, 'Should include command file');
   });
 
+  it('should convert Claude-format frontmatter to OpenCode format', async () => {
+    // Create a plugin with an agent that has Claude-format tools frontmatter
+    await mkdir(join(pluginDir, '.claude-plugin'), { recursive: true });
+    await mkdir(join(pluginDir, 'agents'), { recursive: true });
+
+    // Create plugin manifest
+    const pluginManifest = {
+      name: 'test-tools-plugin',
+      version: '1.0.0'
+    };
+    await writeFile(
+      join(pluginDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify(pluginManifest, null, 2)
+    );
+
+    // Create an agent with Claude-format tools (comma-separated string)
+    const agentContent = `---
+name: Test Agent
+tools: Glob, Grep, LS
+model: anthropic/claude-sonnet-4-20250514
+---
+
+# Test Agent
+
+This agent has tools.
+`;
+    await writeFile(join(pluginDir, 'agents', 'test-agent.md'), agentContent);
+
+    // Create a workspace to install into
+    const workspaceDir = join(testDir, 'workspace');
+    await mkdir(workspaceDir);
+
+    // Install plugin to OpenCode platform (NOT Claude)
+    const { stdout, stderr, code } = runCli(
+      ['install', pluginDir, '--platforms', 'opencode'],
+      workspaceDir
+    );
+
+    console.log('Install output:', stdout);
+    if (stderr) console.error('Install stderr:', stderr);
+
+    assert.strictEqual(code, 0, 'Install should succeed');
+
+    // Verify agent was installed to .opencode/agent/
+    const agentFile = join(workspaceDir, '.opencode', 'agent', 'test-agent.md');
+    assert.ok(
+      await exists(agentFile),
+      'Agent should be installed to .opencode/agent/'
+    );
+
+    // Read the installed agent file and check frontmatter
+    const { readFile } = await import('fs/promises');
+    const installedContent = await readFile(agentFile, 'utf-8');
+    
+    console.log('Installed agent content:', installedContent);
+
+    // Parse frontmatter
+    const { splitFrontmatter } = await import('../src/utils/markdown-frontmatter.js');
+    const parsed = splitFrontmatter(installedContent);
+
+    // Verify tools were converted from "Glob, Grep, LS" to { Glob: true, Grep: true, LS: true }
+    assert.ok(parsed.frontmatter, 'Should have frontmatter');
+    assert.ok(parsed.frontmatter.tools, 'Should have tools field');
+    assert.strictEqual(typeof parsed.frontmatter.tools, 'object', 'Tools should be an object, not a string');
+    assert.strictEqual(parsed.frontmatter.tools.Glob, true, 'Glob should be true');
+    assert.strictEqual(parsed.frontmatter.tools.Grep, true, 'Grep should be true');
+    assert.strictEqual(parsed.frontmatter.tools.LS, true, 'LS should be true');
+  });
+
   it('should parse git spec with subdirectory syntax', async () => {
     const { parseGitSpec } = await import('../src/utils/git-spec.js');
 
