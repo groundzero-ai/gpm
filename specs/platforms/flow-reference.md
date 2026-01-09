@@ -275,37 +275,40 @@ model: anthropic/claude-sonnet-4-20250514
 model: sonnet
 ```
 
-#### Operation 5: `$transform` - Pipeline Transformation
+#### Operation 5: `$pipeline` - Field Transformation Pipeline
 
-Transform a field through multiple steps:
+Transform a field through a pipeline of MongoDB-aligned operations:
 
 ```jsonc
 {
-  "$transform": {
+  "$pipeline": {
     "field": "tools",
-    "steps": [
-      { "filter": { "value": true } },
-      { "keys": true },
-      { "map": "capitalize" },
-      { "join": ", " }
+    "operations": [
+      { "$filter": { "match": { "value": true } } },
+      { "$objectToArray": { "extract": "keys" } },
+      { "$map": { "each": "capitalize" } },
+      { "$reduce": { "type": "join", "separator": ", " } }
     ]
   }
 }
 ```
 
-**Transform steps:**
+**Pipeline operations:**
 
-| Step | Purpose | Example |
-|------|---------|---------|
-| `{ "filter": { "value": X } }` | Keep entries where value equals X | Filter true values |
-| `{ "filter": { "key": X } }` | Keep entries where key equals X | Filter by key name |
-| `{ "keys": true }` | Extract object keys to array | `{a:1, b:2}` → `["a","b"]` |
-| `{ "values": true }` | Extract values to array | `{a:1, b:2}` → `[1,2]` |
-| `{ "entries": true }` | Convert to entries | `{a:1}` → `[["a",1]]` |
-| `{ "map": "capitalize" }` | Transform each element | Capitalize strings |
-| `{ "map": "uppercase" }` | Transform each element | Uppercase strings |
-| `{ "map": "lowercase" }` | Transform each element | Lowercase strings |
-| `{ "join": "sep" }` | Join array to string | Join with separator |
+| Operation | Purpose | Example |
+|-----------|---------|---------|
+| `{ "$filter": { "match": { "value": X } } }` | Keep entries where value equals X | Filter true values |
+| `{ "$filter": { "match": { "key": X } } }` | Keep entries where key equals X | Filter by key name |
+| `{ "$objectToArray": { "extract": "keys" } }` | Extract object keys to array | `{a:1, b:2}` → `["a","b"]` |
+| `{ "$objectToArray": { "extract": "values" } }` | Extract values to array | `{a:1, b:2}` → `[1,2]` |
+| `{ "$objectToArray": { "extract": "entries" } }` | Convert to entries | `{a:1}` → `[["a",1]]` |
+| `{ "$map": { "each": "capitalize" } }` | Transform each element | Capitalize strings |
+| `{ "$map": { "each": "uppercase" } }` | Transform each element | Uppercase strings |
+| `{ "$map": { "each": "lowercase" } }` | Transform each element | Lowercase strings |
+| `{ "$reduce": { "type": "join", "separator": "," } }` | Join array to string | Join with separator |
+| `{ "$reduce": { "type": "split", "separator": "," } }` | Split string to array | Split by separator |
+| `{ "$arrayToObject": { "value": X } }` | Array to object | `["a","b"]` → `{a:X, b:X}` |
+| `{ "$replace": { "pattern": "...", "with": "..." } }` | Regex replace | String transformation |
 
 **Before:**
 ```yaml
@@ -367,13 +370,13 @@ Copy a field with optional pattern-based transformation:
       }
     },
     {
-      "$transform": {
+      "$pipeline": {
         "field": "tools",
-        "steps": [
-          { "filter": { "value": true } },
-          { "keys": true },
-          { "map": "capitalize" },
-          { "join": ", " }
+        "operations": [
+          { "$filter": { "match": { "value": true } } },
+          { "$objectToArray": { "extract": "keys" } },
+          { "$map": { "each": "capitalize" } },
+          { "$reduce": { "type": "join", "separator": ", " } }
         ]
       }
     },

@@ -102,25 +102,25 @@
           // - If it starts with "anthropic/", apply regex transformations
           // - Otherwise, set to "default"
           {
-            "$transform": {
+            "$pipeline": {
               "field": "model",
-              "steps": [
+              "operations": [
                 // First, check if it's an Anthropic model. If not, replace with "default"
-                { "replace": { "pattern": "^(?!anthropic/).*$", "with": "default" } },
+                { "$replace": { "pattern": "^(?!anthropic/).*$", "with": "default" } },
                 // Then apply Anthropic transformations (these only affect anthropic/* models)
-                { "replace": { "pattern": "^anthropic/", "with": "" } },
-                { "replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+                { "$replace": { "pattern": "^anthropic/", "with": "" } },
+                { "$replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
               ]
             }
           },
-          // Transform tools
+          // Transform tools: object → string
           {
-            "$transform": {
+            "$pipeline": {
               "field": "tools",
-              "steps": [
-                { "filter": { "value": true } },
-                { "keys": true },
-                { "join": ", " }
+              "operations": [
+                { "$filter": { "match": { "value": true } } },
+                { "$objectToArray": { "extract": "keys" } },
+                { "$reduce": { "type": "join", "separator": ", " } }
               ]
             }
           },
@@ -164,29 +164,29 @@
           
           // Reverse model transformation
           {
-            "$transform": {
+            "$pipeline": {
               "field": "model",
-              "steps": [
+              "operations": [
                 // Step 1: Convert version hyphens back to dots
                 // claude-sonnet-4-20250514 → claude-sonnet-4.20250514
-                { "replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } },
+                { "$replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } },
                 
                 // Step 2: Add anthropic/ prefix ONLY if:
                 //   - It starts with "claude-" (Claude model without prefix)
                 //   - NOT if it's "default"
                 //   - NOT if it already has "anthropic/"
-                { "replace": { "pattern": "^(claude-.+)$", "with": "anthropic/$1" } }
+                { "$replace": { "pattern": "^(claude-.+)$", "with": "anthropic/$1" } }
               ]
             }
           },
           
           // Reverse tools transformation: "bash, read" → { bash: true, read: true }
           {
-            "$transform": {
+            "$pipeline": {
               "field": "tools",
-              "steps": [
-                { "split": ", " },
-                { "arrayToObject": { "value": true } }
+              "operations": [
+                { "$reduce": { "type": "split", "separator": ", " } },
+                { "$arrayToObject": { "value": true } }
               ]
             }
           }

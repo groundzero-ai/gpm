@@ -5,7 +5,7 @@
 The **Map Pipeline** is a MongoDB aggregation-inspired transformation system that enables powerful document-level field transformations during package installation. It provides a declarative, composable approach to transforming package content as files flow from source to target.
 
 **Design Philosophy:**
-- **MongoDB-inspired:** Familiar `$operation` syntax for developers
+- **MongoDB-aligned:** Uses `$operation` syntax matching MongoDB aggregation operators
 - **Sequential execution:** Operations applied in order, each receiving the result of the previous
 - **Document-level:** Transforms entire documents (frontmatter, JSON, YAML, TOML)
 - **Context-aware:** Access file metadata through `$$` context variables
@@ -13,7 +13,8 @@ The **Map Pipeline** is a MongoDB aggregation-inspired transformation system tha
 
 ## Implementation
 
-**Commit:** `e464927d2f5d2480c439a83c5cfc2e04053ac22d`
+**Initial Commit:** `e464927d2f5d2480c439a83c5cfc2e04053ac22d`  
+**MongoDB Alignment:** January 9, 2026 (Breaking Change)
 
 **Core files:**
 - `src/core/flows/map-pipeline/index.ts` - Main pipeline executor
@@ -101,6 +102,8 @@ Sets one or more fields with literal values or context variables.
 // Results in: { "template": "$$placeholder" }
 ```
 
+**MongoDB equivalent:** `$set` (exact match)
+
 **See:** `src/core/flows/map-pipeline/operations/set.ts`
 
 ---
@@ -134,6 +137,8 @@ Renames fields with support for wildcards.
 { "mcpServers": { "server1": {}, "server2": {} } }
 ```
 
+**MongoDB equivalent:** `$rename` (exact match)
+
 **See:** `src/core/flows/map-pipeline/operations/rename.ts`
 
 ---
@@ -154,6 +159,8 @@ Removes one or more fields from the document.
 // Nested field
 { "$unset": "config.debug.verbose" }
 ```
+
+**MongoDB equivalent:** `$unset` (exact match)
 
 **See:** `src/core/flows/map-pipeline/operations/unset.ts`
 
@@ -202,38 +209,43 @@ Pattern matching with value replacement (like switch statement).
 - **First match wins:** Stops checking after first successful match
 - **Default optional:** If provided, used when no patterns match
 
+**MongoDB equivalent:** Similar to `$switch` (aggregation expression)
+
 **See:** `src/core/flows/map-pipeline/operations/switch.ts`
 
 ---
 
-### 5. `$transform` - Multi-Step Pipeline Transformation
+### 5. `$pipeline` - Multi-Step Field Transformation
 
-Transforms a field through multiple steps (typically object → array → string).
+Transforms a field through a pipeline of operations (MongoDB-aligned syntax).
 
-**Available steps:**
+**Available operations:**
 
-| Step | Purpose | Input → Output |
-|------|---------|----------------|
-| `{ "filter": { "value": X } }` | Filter by value | Object → Object (filtered) |
-| `{ "filter": { "key": X } }` | Filter by key | Object → Object (filtered) |
-| `{ "keys": true }` | Extract keys | Object → Array |
-| `{ "values": true }` | Extract values | Object → Array |
-| `{ "entries": true }` | To entries | Object → Array of [key, value] |
-| `{ "map": "capitalize" }` | Transform elements | Array → Array (transformed) |
-| `{ "join": "," }` | Join to string | Array → String |
+| Operation | Purpose | Input → Output |
+|-----------|---------|----------------|
+| `{ "$filter": { "match": { "value": X } } }` | Filter by value | Object → Object (filtered) |
+| `{ "$filter": { "match": { "key": X } } }` | Filter by key | Object → Object (filtered) |
+| `{ "$objectToArray": { "extract": "keys" } }` | Extract keys | Object → Array |
+| `{ "$objectToArray": { "extract": "values" } }` | Extract values | Object → Array |
+| `{ "$objectToArray": { "extract": "entries" } }` | To entries | Object → Array of [key, value] |
+| `{ "$map": { "each": "capitalize" } }` | Transform elements | Array → Array (transformed) |
+| `{ "$reduce": { "type": "join", "separator": "," } }` | Join to string | Array → String |
+| `{ "$reduce": { "type": "split", "separator": "," } }` | Split to array | String → Array |
+| `{ "$arrayToObject": { "value": X } }` | Array to object | Array → Object |
+| `{ "$replace": { "pattern": "...", "with": "..." } }` | String replacement | String → String |
 
 **Example:**
 
 ```jsonc
 // Convert tools object to CSV string
 {
-  "$transform": {
+  "$pipeline": {
     "field": "tools",
-    "steps": [
-      { "filter": { "value": true } },   // Keep only true values
-      { "keys": true },                   // Extract keys
-      { "map": "capitalize" },            // Capitalize each
-      { "join": ", " }                    // Join to string
+    "operations": [
+      { "$filter": { "match": { "value": true } } },   // Keep only true values
+      { "$objectToArray": { "extract": "keys" } },     // Extract keys
+      { "$map": { "each": "capitalize" } },            // Capitalize each
+      { "$reduce": { "type": "join", "separator": ", " } } // Join to string
     ]
   }
 }
@@ -255,6 +267,14 @@ tools: Bash, Read
 
 **Empty result handling:**  
 If transformation results in empty string or empty array, the field is automatically removed.
+
+**MongoDB alignment:**
+- `$filter` - matches MongoDB's `$filter`
+- `$objectToArray` - matches MongoDB's `$objectToArray`
+- `$map` - matches MongoDB's `$map`
+- `$reduce` - inspired by MongoDB's `$reduce`
+- `$arrayToObject` - matches MongoDB's `$arrayToObject`
+- `$replace` - similar to MongoDB's `$replaceOne`/`$replaceAll`
 
 **See:** `src/core/flows/map-pipeline/operations/transform.ts`
 
@@ -290,6 +310,8 @@ Copies a field to new location with optional pattern-based transformation.
   }
 }
 ```
+
+**MongoDB equivalent:** Custom operation (not in MongoDB)
 
 **See:** `src/core/flows/map-pipeline/operations/copy.ts`
 
@@ -351,25 +373,24 @@ Copies a field to new location with optional pattern-based transformation.
     
     // 2. Simplify model ID
     {
-      "$switch": {
+      "$pipeline": {
         "field": "model",
-        "cases": [
-          { "pattern": "anthropic/claude-sonnet-*", "value": "sonnet" },
-          { "pattern": "anthropic/claude-opus-*", "value": "opus" }
-        ],
-        "default": "inherit"
+        "operations": [
+          { "$replace": { "pattern": "^anthropic/", "with": "" } },
+          { "$replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+        ]
       }
     },
     
     // 3. Transform tools object to CSV
     {
-      "$transform": {
+      "$pipeline": {
         "field": "tools",
-        "steps": [
-          { "filter": { "value": true } },
-          { "keys": true },
-          { "map": "capitalize" },
-          { "join": ", " }
+        "operations": [
+          { "$filter": { "match": { "value": true } } },
+          { "$objectToArray": { "extract": "keys" } },
+          { "$map": { "each": "capitalize" } },
+          { "$reduce": { "type": "join", "separator": ", " } }
         ]
       }
     },
@@ -413,12 +434,122 @@ permission:
 ```yaml
 ---
 name: code-reviewer
-model: sonnet
+model: claude-sonnet-4-20250514
 tools: Bash, Read
 permissionMode: plan
 ---
 # Code Reviewer
 ```
+
+## `$pipeline` Operation Details
+
+### `$filter` - Filter Object Entries
+
+```jsonc
+// Filter by value
+{ "$filter": { "match": { "value": true } } }
+
+// Filter by key
+{ "$filter": { "match": { "key": "enabled" } } }
+```
+
+**MongoDB equivalent:** `$filter` operator
+
+---
+
+### `$objectToArray` - Convert Object to Array
+
+```jsonc
+// Extract keys only
+{ "$objectToArray": { "extract": "keys" } }
+// { a: 1, b: 2 } → ["a", "b"]
+
+// Extract values only
+{ "$objectToArray": { "extract": "values" } }
+// { a: 1, b: 2 } → [1, 2]
+
+// Extract entries (default)
+{ "$objectToArray": { "extract": "entries" } }
+// { a: 1, b: 2 } → [["a", 1], ["b", 2]]
+
+// Shorthand for entries
+{ "$objectToArray": true }
+```
+
+**MongoDB equivalent:** `$objectToArray` (exact match for entries mode)
+
+---
+
+### `$arrayToObject` - Convert Array to Object
+
+```jsonc
+// Array of strings to object with fixed value
+{ "$arrayToObject": { "value": true } }
+// ["bash", "read"] → { bash: true, read: true }
+
+// With context variable
+{ "$arrayToObject": { "value": "$$filename" } }
+// ["tool1", "tool2"] → { tool1: "code-reviewer", tool2: "code-reviewer" }
+```
+
+**MongoDB equivalent:** `$arrayToObject` (similar, but MongoDB uses entries format)
+
+---
+
+### `$map` - Transform Array Elements
+
+```jsonc
+{ "$map": { "each": "capitalize" } }
+// ["hello", "world"] → ["Hello", "World"]
+
+{ "$map": { "each": "uppercase" } }
+// ["hello", "world"] → ["HELLO", "WORLD"]
+
+{ "$map": { "each": "lowercase" } }
+// ["HELLO", "WORLD"] → ["hello", "world"]
+```
+
+**MongoDB equivalent:** `$map` (similar structure)
+
+---
+
+### `$reduce` - Reduce Array to Single Value
+
+```jsonc
+// Join array to string
+{ "$reduce": { "type": "join", "separator": ", " } }
+// ["bash", "read"] → "bash, read"
+
+// Split string to array
+{ "$reduce": { "type": "split", "separator": ", " } }
+// "bash, read" → ["bash", "read"]
+
+// Sum numbers
+{ "$reduce": { "type": "sum" } }
+// [1, 2, 3] → 6
+
+// Count elements
+{ "$reduce": { "type": "count" } }
+// ["a", "b", "c"] → 3
+```
+
+**MongoDB equivalent:** `$reduce` (inspired by MongoDB's `$reduce`, but simplified)
+
+---
+
+### `$replace` - String Replacement with Regex
+
+```jsonc
+// Simple replacement
+{ "$replace": { "pattern": "^anthropic/", "with": "" } }
+// "anthropic/claude-sonnet" → "claude-sonnet"
+
+// With capture groups
+{ "$replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+// "claude-4.5" → "claude-4-5"
+```
+
+**MongoDB equivalent:** `$replaceOne` / `$replaceAll`
 
 ## Validation
 
@@ -490,7 +621,7 @@ npm test -- map-pipeline
 [
   { "$set": { ... } },       // 1. Add fields
   { "$switch": { ... } },    // 2. Transform values
-  { "$transform": { ... } }, // 3. Complex transforms
+  { "$pipeline": { ... } },  // 3. Complex transforms
   { "$copy": { ... } },      // 4. Derive fields
   { "$unset": [...] }        // 5. Cleanup
 ]
@@ -516,9 +647,11 @@ npm test -- map-pipeline
     
     // Convert full model ID to short name for Claude compatibility
     {
-      "$switch": {
+      "$pipeline": {
         "field": "model",
-        "cases": [...]
+        "operations": [
+          { "$replace": { "pattern": "^anthropic/", "with": "" } }
+        ]
       }
     }
   ]
@@ -542,7 +675,7 @@ cat .claude/agents/code-reviewer.md
 - All operations execute in-memory (no I/O)
 - Operations are O(1) to O(n) where n = number of fields
 - Pattern matching uses optimized glob library
-- Transform steps are O(steps × elements)
+- Pipeline operations are O(operations × elements)
 
 **Recommendations:**
 - Keep pipelines under 10 operations
@@ -551,153 +684,52 @@ cat .claude/agents/code-reviewer.md
 
 ## Related Documentation
 
-- **Implementation Plan:** `plans/platforms-dsl.md` - Complete design specification
+- **Breaking Changes:** `BREAKING_CHANGES.md` - MongoDB alignment migration
+- **MongoDB Alignment:** `MONGODB_ALIGNMENT.md` - Complete migration guide
+- **Examples:** `MONGODB_ALIGNMENT_EXAMPLE.md` - Step-by-step examples
 - **Type Definitions:** `src/core/flows/map-pipeline/types.ts` - TypeScript types
 - **JSON Schema:** `schemas/map-pipeline-v1.json` - Validation schema
 - **Tests:** `tests/flows/map-pipeline.test.ts` - Test suite
 - **Flow Documentation:** `specs/platforms/flows.md` - Flow system overview
-- **Examples:** `specs/platforms/examples.md` - Real-world configurations
 
-## Migration from Old System
+## MongoDB Alignment (Breaking Change)
 
-**The map pipeline replaces the old key-based mapping system with zero backwards compatibility.**
+**Date:** January 9, 2026
 
-Old system (deprecated):
-```jsonc
-{
-  "map": {
-    "oldKey": "newKey"
-  }
-}
-```
+The pipeline syntax has been updated to align with MongoDB aggregation conventions:
 
-New system (current):
-```jsonc
-{
-  "map": [
-    { "$rename": { "oldKey": "newKey" } }
-  ]
-}
-```
+### What Changed
 
-**Key differences:**
-- Map is now an **array** of operations (not an object)
-- All operations use **$ prefix** (MongoDB convention)
-- **Sequential execution** (operations in order)
-- **Context variables** (`$$filename`, etc.)
-- **Rich operation set** (6 operations vs simple rename)
+1. **`$transform` renamed to `$pipeline`**
+2. **`steps` renamed to `operations`**
+3. **All sub-operations now use `$` prefix:**
+   - `filter` → `$filter`
+   - `keys`/`values`/`entries` → `$objectToArray`
+   - `map` → `$map`
+   - `join`/`split` → `$reduce`
+   - `arrayToObject` → `$arrayToObject`
+   - `replace` → `$replace`
+
+### Migration Required
+
+See `BREAKING_CHANGES.md` for complete migration guide.
 
 ## Summary
 
-The Map Pipeline provides a powerful, MongoDB-inspired transformation system for document-level operations:
+The Map Pipeline provides a powerful, MongoDB-aligned transformation system for document-level operations:
 
-✓ **6 core operations:** set, rename, unset, switch, transform, copy  
+✓ **6 core operations:** set, rename, unset, switch, pipeline, copy  
 ✓ **Context-aware:** Access file metadata with `$$` variables  
 ✓ **Sequential execution:** Predictable, composable transformations  
 ✓ **Type-safe:** Full TypeScript support  
 ✓ **Validated:** JSON Schema enforcement  
 ✓ **Tested:** Comprehensive test coverage  
 ✓ **Performant:** In-memory operations with minimal overhead  
+✓ **MongoDB-aligned:** Familiar operators for MongoDB developers
 
-For complete examples and usage patterns, see `plans/platforms-dsl.md` and the test suite.
-
-## Advanced Features
-
-### Transform Inversion (Universal Converter)
-
-**Introduced in:** Commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`
-
-The Universal Platform Converter can **automatically invert** transform operations to enable platform-specific → universal conversions. This allows installing Claude plugins to other platforms.
-
-**Inversion rules:**
-
-#### `$transform` Inversion
-
-Multi-step transformations can be inverted by reversing the pipeline:
-
-**Forward transformation:**
-```jsonc
-{
-  "$transform": {
-    "field": "tools",
-    "steps": [
-      { "filter": { "value": true } },   // Object → filtered object
-      { "keys": true },                   // Object → array of keys
-      { "join": ", " }                    // Array → string
-    ]
-  }
-}
-```
-Input: `{ tools: { bash: true, read: true, write: false } }`  
-Output: `{ tools: "bash, read" }`
-
-**Inverted transformation:**
-```jsonc
-{
-  "$transform": {
-    "field": "tools",
-    "steps": [
-      { "split": ", " },                 // String → array
-      { "arrayToObject": { "value": true } }  // Array → object
-    ]
-  }
-}
-```
-Input: `{ tools: "bash, read" }`  
-Output: `{ tools: { bash: true, read: true } }`
-
-**Invertible transform steps:**
-- `join` ↔ `split`
-- `keys` + `filter` ↔ `arrayToObject`
-- `entries` ↔ `fromEntries`
-
-**Non-invertible (skipped in reverse):**
-- `map` (capitalize, uppercase, lowercase) - loses original case
-- `values` - loses keys
-- Complex multi-step transforms
-
-#### `$rename` Inversion
-
-Key renaming inverts by swapping key pairs:
-
-**Forward:**
-```jsonc
-{ "$rename": { "mcp": "mcpServers" } }
-```
-
-**Inverted:**
-```jsonc
-{ "$rename": { "mcpServers": "mcp" } }
-```
-
-#### `$copy` Inversion
-
-Field copying inverts by swapping from/to:
-
-**Forward:**
-```jsonc
-{ "$copy": { "from": "config", "to": "settings" } }
-```
-
-**Inverted:**
-```jsonc
-{ "$copy": { "from": "settings", "to": "config" } }
-```
-
-#### Non-Reversible Operations
-
-These operations are **skipped** during inversion:
-- `$set` - Cannot determine original value
-- `$unset` - Cannot restore removed fields
-- Complex `$transform` with lossy steps
-- `$switch` with ambiguous patterns
-
-**See:** 
-- [Universal Converter](./universal-converter.md) - Complete conversion system
-- `src/core/flows/flow-inverter.ts` - Inversion implementation
-- `src/core/flows/map-pipeline/operations/transform.ts` - Transform step inversion
+For complete examples and usage patterns, see the related documentation above.
 
 ---
 
 **Map Pipeline v1.0** - Implemented in commit `e464927d2f5d2480c439a83c5cfc2e04053ac22d`  
-**Transform Inversion** - Implemented in commit `a3fdb9f2a846fa8c183bca851812c491aaf5b8e9`
+**MongoDB Alignment** - Updated January 9, 2026 (Breaking Change)

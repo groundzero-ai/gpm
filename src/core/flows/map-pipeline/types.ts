@@ -36,7 +36,7 @@ export type Operation =
   | RenameOperation
   | UnsetOperation
   | SwitchOperation
-  | TransformOperation
+  | PipelineOperation
   | CopyOperation;
 
 /**
@@ -111,125 +111,145 @@ export interface SwitchCase {
 }
 
 /**
- * $transform - Pipeline transformation on a field
+ * $pipeline - Pipeline transformation on a field (MongoDB-inspired)
+ * 
+ * Renamed from $transform to better reflect MongoDB conventions.
+ * Uses sub-operations with $ prefix for consistency.
  * 
  * Example:
  * {
- *   "$transform": {
+ *   "$pipeline": {
  *     "field": "tools",
- *     "steps": [
- *       { "filter": { "value": true } },
- *       { "keys": true },
- *       { "join": ", " }
+ *     "operations": [
+ *       { "$filter": { "match": { "value": true } } },
+ *       { "$objectToArray": { "extract": "keys" } },
+ *       { "$reduce": { "type": "join", "separator": ", " } }
  *     ]
  *   }
  * }
  */
-export interface TransformOperation {
-  $transform: {
+export interface PipelineOperation {
+  $pipeline: {
     /** Field to transform */
     field: string;
     
-    /** Transformation steps */
-    steps: TransformStep[];
+    /** Pipeline operations (MongoDB-style) */
+    operations: PipelineStep[];
   };
 }
 
 /**
- * Transform step for $transform operation
+ * Pipeline step for $pipeline operation
+ * All steps use $ prefix to match MongoDB conventions
  */
-export type TransformStep =
+export type PipelineStep =
   | FilterStep
-  | KeysStep
-  | ValuesStep
-  | EntriesStep
-  | MapStep
-  | JoinStep
-  | SplitStep
+  | ObjectToArrayStep
   | ArrayToObjectStep
-  | FromEntriesStep
+  | MapStep
+  | ReduceStep
   | ReplaceStep;
 
 /**
- * Filter entries by key or value
+ * $filter - Filter entries by key or value (matches MongoDB $filter)
+ * 
+ * Examples:
+ * - { "$filter": { "match": { "value": true } } }
+ * - { "$filter": { "match": { "key": "enabled" } } }
  */
 export interface FilterStep {
-  filter: {
-    /** Filter by value equality */
-    value?: any;
-    
-    /** Filter by key equality */
-    key?: any;
+  $filter: {
+    /** Filter criteria */
+    match?: {
+      /** Filter by value equality */
+      value?: any;
+      
+      /** Filter by key equality */
+      key?: any;
+    };
   };
 }
 
 /**
- * Extract object keys to array
+ * $objectToArray - Convert object to array (matches MongoDB $objectToArray)
+ * 
+ * Examples:
+ * - { "$objectToArray": { "extract": "keys" } }      → ["a", "b"]
+ * - { "$objectToArray": { "extract": "values" } }    → [1, 2]
+ * - { "$objectToArray": { "extract": "entries" } }   → [["a", 1], ["b", 2]]
+ * - { "$objectToArray": true }                       → [["a", 1], ["b", 2]] (default: entries)
  */
-export interface KeysStep {
-  keys: true;
+export interface ObjectToArrayStep {
+  $objectToArray: 
+    | true  // Default: extract entries
+    | {
+        /** What to extract from object */
+        extract?: 'keys' | 'values' | 'entries';
+      };
 }
 
 /**
- * Extract object values to array
- */
-export interface ValuesStep {
-  values: true;
-}
-
-/**
- * Convert object to entries array [[key, value], ...]
- */
-export interface EntriesStep {
-  entries: true;
-}
-
-/**
- * Map transform on each array element
- */
-export interface MapStep {
-  map: 'capitalize' | 'uppercase' | 'lowercase';
-}
-
-/**
- * Join array to string
- */
-export interface JoinStep {
-  join: string;
-}
-
-/**
- * Split string to array (inverse of join)
- */
-export interface SplitStep {
-  split: string;
-}
-
-/**
- * Convert array to object with specified value (inverse of keys)
+ * $arrayToObject - Convert array to object with specified value (matches MongoDB $arrayToObject)
+ * 
+ * Examples:
+ * - { "$arrayToObject": { "value": true } }
+ *   ["bash", "read"] → { bash: true, read: true }
+ * 
+ * - { "$arrayToObject": { "value": "$$filename" } }
+ *   ["tool1", "tool2"] → { tool1: "code-reviewer", tool2: "code-reviewer" }
  */
 export interface ArrayToObjectStep {
-  arrayToObject: {
+  $arrayToObject: {
+    /** Value to assign to each key (supports context variables) */
     value: any;
   };
 }
 
 /**
- * Convert entries array to object (inverse of entries)
+ * $map - Transform each element in array (matches MongoDB $map)
+ * 
+ * Examples:
+ * - { "$map": { "each": "capitalize" } }
+ * - { "$map": { "each": "uppercase" } }
+ * - { "$map": { "each": "lowercase" } }
  */
-export interface FromEntriesStep {
-  fromEntries: true;
+export interface MapStep {
+  $map: {
+    /** Transformation to apply to each element */
+    each: 'capitalize' | 'uppercase' | 'lowercase';
+  };
 }
 
 /**
- * Replace using regex with capture group support
+ * $reduce - Reduce array using common patterns (inspired by MongoDB $reduce)
+ * 
+ * Consolidates join/split and other reduction operations.
  * 
  * Examples:
- * - { "replace": { "pattern": "^anthropic/", "with": "" } }
- * - { "replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
+ * - { "$reduce": { "type": "join", "separator": ", " } }     → "a, b, c"
+ * - { "$reduce": { "type": "split", "separator": ", " } }    → ["a", "b", "c"]
+ * - { "$reduce": { "type": "sum" } }                         → 6
+ * - { "$reduce": { "type": "count" } }                       → 3
+ */
+export interface ReduceStep {
+  $reduce: {
+    /** Reduction strategy */
+    type: 'join' | 'split' | 'sum' | 'count';
+    
+    /** Separator for join/split */
+    separator?: string;
+  };
+}
+
+/**
+ * $replace - String replacement using regex (similar to MongoDB $replaceOne/$replaceAll)
+ * 
+ * Examples:
+ * - { "$replace": { "pattern": "^anthropic/", "with": "" } }
+ * - { "$replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
  */
 export interface ReplaceStep {
-  replace: {
+  $replace: {
     /** Regex pattern to match */
     pattern: string;
     

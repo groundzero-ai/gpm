@@ -513,7 +513,7 @@ Transform document fields using a **MongoDB-inspired pipeline**:
 2. **`$rename`** - Rename fields (supports wildcards)
 3. **`$unset`** - Remove fields
 4. **`$switch`** - Pattern-based value replacement
-5. **`$transform`** - Multi-step field transformation (objects → strings)
+5. **`$pipeline`** - Multi-step field transformation (MongoDB-aligned)
 6. **`$copy`** - Copy field with optional transformation
 
 **Example transformation:**

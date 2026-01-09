@@ -103,7 +103,7 @@ const format = detectPackageFormat(files);
   ```
 
 - **Operations processed in reverse order**
-- **Non-reversible operations skipped** (`$set`, `$unset`, `$transform`)
+- **Non-reversible operations skipped** (`$set`, `$unset`, `$pipeline` with lossy transforms)
 - **Format converters preserved** (`yaml`, `jsonc`, `toml`)
 - **Filters skipped** (`filter-empty`, `filter-null`)
 
@@ -393,7 +393,7 @@ function createPlatformConverter(workspaceRoot: string): PlatformConverter
    - $copy: Swap from/to
    - $set/$unset: Skip (not reversible)
    - $switch: Reverse pattern/value pairs
-   - $transform: Skip (complex)
+   - $pipeline: Invert operations if possible (see below)
 3. Filter pipe transforms:
    - Keep: Format converters (yaml, jsonc, toml)
    - Keep: Merge strategies
@@ -463,7 +463,7 @@ Some flow operations cannot be reliably inverted:
 
 - **`$set`:** Cannot determine original value
 - **`$unset`:** Cannot restore removed fields
-- **`$transform`:** Complex multi-step transformations
+- **`$pipeline`:** Complex multi-step transformations with lossy operations (e.g., `$map` with case changes)
 - **Filters:** Cannot "un-filter" removed content
 
 **Impact:** Conversion may not be 100% lossless for packages with complex transformations.

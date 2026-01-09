@@ -11,7 +11,7 @@ import { executeSet, validateSet } from './operations/set.js';
 import { executeRename, validateRename } from './operations/rename.js';
 import { executeUnset, validateUnset } from './operations/unset.js';
 import { executeSwitch, validateSwitch } from './operations/switch.js';
-import { executeTransform, validateTransform } from './operations/transform.js';
+import { executePipeline, validatePipeline } from './operations/transform.js';
 import { executeCopy, validateCopy } from './operations/copy.js';
 
 /**
@@ -65,8 +65,8 @@ function executeOperation(
     return executeSwitch(document, operation);
   }
 
-  if ('$transform' in operation) {
-    return executeTransform(document, operation);
+  if ('$pipeline' in operation) {
+    return executePipeline(document, operation, context);
   }
 
   if ('$copy' in operation) {
@@ -109,7 +109,7 @@ export function validateMapPipeline(pipeline: MapPipeline): ValidationResult {
 
     // Check that operation has exactly one operation key
     const operationKeys = Object.keys(operation);
-    const validOperations = ['$set', '$rename', '$unset', '$switch', '$transform', '$copy'];
+    const validOperations = ['$set', '$rename', '$unset', '$switch', '$pipeline', '$copy'];
     const operationKey = operationKeys.find(key => validOperations.includes(key));
 
     if (!operationKey) {
@@ -161,8 +161,8 @@ function validateOperation(operation: Operation): ValidationResult {
     return validateSwitch(operation);
   }
 
-  if ('$transform' in operation) {
-    return validateTransform(operation);
+  if ('$pipeline' in operation) {
+    return validatePipeline(operation);
   }
 
   if ('$copy' in operation) {
