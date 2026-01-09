@@ -159,21 +159,28 @@
         "from": ".claude/agents/**/*.md",
         "to": "agents/**/*.md",
         "map": [
-          // Unset added fields
+          // Remove the name field added during export
           { "$unset": "name" },
+          
           // Reverse model transformation
           {
             "$transform": {
               "field": "model",
               "steps": [
-                // If NOT "default", add anthropic/ prefix
-                { "replace": { "pattern": "^(?!default)(.*)$", "with": "anthropic/$1" } },
-                // Restore dots in version numbers
-                { "replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } }
+                // Step 1: Convert version hyphens back to dots
+                // claude-sonnet-4-20250514 → claude-sonnet-4.20250514
+                { "replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } },
+                
+                // Step 2: Add anthropic/ prefix ONLY if:
+                //   - It starts with "claude-" (Claude model without prefix)
+                //   - NOT if it's "default"
+                //   - NOT if it already has "anthropic/"
+                { "replace": { "pattern": "^(claude-.+)$", "with": "anthropic/$1" } }
               ]
             }
           },
-          // Reverse tools transformation
+          
+          // Reverse tools transformation: "bash, read" → { bash: true, read: true }
           {
             "$transform": {
               "field": "tools",
