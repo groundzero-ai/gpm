@@ -134,10 +134,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".mcp.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -198,10 +194,7 @@
       },
       {
         "from": [".mcp.json", ".mcp.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -218,11 +211,70 @@
       },
       {
         "from": ["mcp.jsonc", "mcp.json"],
-        "to": ".codex/mcp-servers.toml",
+        "to": ".codex/config.toml",
         "map": [
-          { "$rename": { "mcp": "mcp_servers" } }
+          // 1. Rename root key
+          { "$rename": { "mcpServers": "mcp_servers" } },
+          
+          // 2. Extract bearer token from Authorization header
+          {
+            "$pipeline": {
+              "field": "mcp_servers.*.headers.Authorization",
+              "operations": [
+                { "$extract": { 
+                    "pattern": "^Bearer \\$\\{env:([A-Z_][A-Z0-9_]*)\\}$",
+                    "group": 1,
+                    "default": "$SELF"
+                }}
+              ]
+            }
+          },
+          { "$rename": { "mcp_servers.*.headers.Authorization": "mcp_servers.*.bearer_token_env_var" } },
+          
+          // 3. Partition headers into env and static
+          {
+            "$pipeline": {
+              "field": "mcp_servers.*.headers",
+              "operations": [
+                { "$partition": {
+                    "by": "value",
+                    "patterns": {
+                      "env_http_headers": "^\\$\\{env:.*\\}$",
+                      "http_headers": ".*"
+                    }
+                }}
+              ]
+            }
+          },
+          
+          // 4. Extract env var names from env_http_headers
+          {
+            "$pipeline": {
+              "field": "mcp_servers.*.headers.env_http_headers",
+              "operations": [
+                { "$mapValues": {
+                    "operations": [
+                      { "$extract": { 
+                          "pattern": "^\\$\\{env:([A-Z_][A-Z0-9_]*)\\}$",
+                          "group": 1 
+                      }}
+                    ]
+                }}
+              ]
+            }
+          },
+          
+          // 5. Flatten to server level
+          { "$rename": { "mcp_servers.*.headers.http_headers": "mcp_servers.*.http_headers" } },
+          { "$rename": { "mcp_servers.*.headers.env_http_headers": "mcp_servers.*.env_http_headers" } },
+          { "$unset": "mcp_servers.*.headers" },
+          
+          // 6. Rename timeout
+          { "$rename": { "mcp_servers.*.timeout": "mcp_servers.*.startup_timeout_sec" } },
+          
+          // Post-process: Convert to TOML
+          { "$pipe": ["json-to-toml"] }
         ],
-        "pipe": ["filter-comments", "mcp-to-codex-schema"],
         "merge": "deep"
       }
     ],
@@ -232,11 +284,55 @@
         "to": "commands/**/*.md"
       },
       {
-        "from": ".codex/mcp-servers.toml",
+        "from": ".codex/config.toml",
         "to": "mcp.jsonc",
-        "pipe": ["codex-toml-to-mcp"],
         "map": [
-          { "$rename": { "mcp_servers": "mcp" } }
+          // Pre-process: Parse TOML
+          { "$pipe": ["toml-to-json"] },
+          
+          // 1. Wrap env vars
+          {
+            "$pipeline": {
+              "field": "mcp_servers.*.env_http_headers",
+              "operations": [
+                { "$mapValues": {
+                    "operations": [
+                      { "$replace": { "pattern": "^(.+)$", "with": "${env:$1}" } }
+                    ]
+                }}
+              ]
+            }
+          },
+          
+          // 2. Merge headers
+          {
+            "$pipeline": {
+              "field": "mcp_servers.*",
+              "operations": [
+                { "$mergeFields": {
+                    "from": ["http_headers", "env_http_headers"],
+                    "to": "headers"
+                }}
+              ]
+            }
+          },
+          
+          // 3. Reconstruct Authorization header
+          {
+            "$pipeline": {
+              "field": "mcp_servers.*.bearer_token_env_var",
+              "operations": [
+                { "$replace": { "pattern": "^(.+)$", "with": "Bearer ${env:$1}" } }
+              ]
+            }
+          },
+          { "$rename": { "mcp_servers.*.bearer_token_env_var": "mcp_servers.*.headers.Authorization" } },
+          
+          // 4. Rename timeout
+          { "$rename": { "mcp_servers.*.startup_timeout_sec": "mcp_servers.*.timeout" } },
+          
+          // 5. Rename top-level key
+          { "$rename": { "mcp_servers": "mcpServers" } }
         ]
       }
     ]
@@ -262,10 +358,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".cursor/mcp.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -284,10 +376,7 @@
       },
       {
         "from": [".cursor/mcp.json", ".cursor/mcp.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -308,10 +397,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".factory/settings/mcp.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -326,10 +411,7 @@
       },
       {
         "from": [".factory/settings/mcp.json", ".factory/settings/mcp.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -351,10 +433,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".kilocode/mcp.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -369,10 +447,7 @@
       },
       {
         "from": [".kilocode/mcp.json", ".kilocode/mcp.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -388,10 +463,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".kiro/settings/mcp.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -402,10 +473,7 @@
       },
       {
         "from": [".kiro/settings/mcp.json", ".kiro/settings/mcp.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -430,10 +498,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".opencode/opencode.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -452,10 +516,7 @@
       },
       {
         "from": [".opencode/opencode.json", ".opencode/opencode.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -478,10 +539,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".qwen/settings.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -497,10 +554,7 @@
       },
       {
         "from": [".qwen/settings.json", ".qwen/settings.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },
@@ -517,10 +571,6 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".roo/mcp.json",
-        "pipe": ["filter-comments"],
-        "map": [
-          { "$rename": { "mcp": "mcpServers" } }
-        ],
         "merge": "deep"
       }
     ],
@@ -531,10 +581,7 @@
       },
       {
         "from": [".roo/mcp.json", ".roo/mcp.jsonc"],
-        "to": "mcp.jsonc",
-        "map": [
-          { "$rename": { "mcpServers": "mcp" } }
-        ]
+        "to": "mcp.jsonc"
       }
     ]
   },

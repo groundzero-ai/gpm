@@ -322,12 +322,7 @@ function validateFlows(flows: Flow[], context: string): string[] {
       }
     }
     
-    // Validate pipe transforms
-    if (flow.pipe !== undefined) {
-      if (!Array.isArray(flow.pipe)) {
-        errors.push(`${context}, flows[${i}]: 'pipe' must be array or undefined`)
-      }
-    }
+    // Note: pipe transforms are now handled within map pipeline via $pipe operation
     
     // Validate map pipeline (must be array)
     if (flow.map !== undefined && !Array.isArray(flow.map)) {

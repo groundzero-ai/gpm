@@ -25,8 +25,7 @@ interface ExportFlow {
   to: string | MultiTarget        // Target path in workspace (required)
   
   // Optional transformation fields
-  pipe?: string[]                 // Transform pipeline
-  map?: Operation[]               // Map pipeline operations
+  map?: Operation[]               // Map pipeline operations (includes $pipe for transforms)
   pick?: string[]                 // Extract specific keys
   omit?: string[]                 // Exclude keys
   path?: string                   // JSONPath extraction
@@ -52,8 +51,7 @@ interface ImportFlow {
   to: string | MultiTarget        // Target path in package (required)
   
   // Optional transformation fields (same as export)
-  pipe?: string[]
-  map?: Operation[]
+  map?: Operation[]               // Map pipeline operations (includes $pipe for transforms)
   pick?: string[]
   omit?: string[]
   path?: string
@@ -422,12 +420,11 @@ Flows execute through a multi-stage pipeline:
 1. Load        → Read source file, detect format
 2. Extract     → Apply JSONPath if specified
 3. Filter      → Apply pick/omit on keys
-4. Map         → Transform keys and values
-5. Transform   → Apply pipe transforms
-6. Namespace   → Wrap in namespace if enabled
-7. Embed       → Wrap under key/section if specified
-8. Merge       → Merge with existing target
-9. Write       → Serialize and write to disk
+4. Map         → Transform keys/values (includes $pipe operations)
+5. Namespace   → Wrap in namespace if enabled
+6. Embed       → Wrap under key/section if specified
+7. Merge       → Merge with existing target
+8. Write       → Serialize and write to disk
 ```
 
 ### Stage 1: Load
@@ -508,13 +505,14 @@ Transform document fields using a **MongoDB-inspired pipeline**:
 
 **Map Pipeline** is an array of operations that execute sequentially on the document:
 
-**Six core operations:**
+**Seven core operations:**
 1. **`$set`** - Set field values (supports context variables like `$$filename`)
 2. **`$rename`** - Rename fields (supports wildcards)
 3. **`$unset`** - Remove fields
 4. **`$switch`** - Pattern-based value replacement
 5. **`$pipeline`** - Multi-step field transformation (MongoDB-aligned)
 6. **`$copy`** - Copy field with optional transformation
+7. **`$pipe`** - Apply transform registry operations (format conversions, validations)
 
 **Example transformation:**
 ```jsonc
@@ -549,22 +547,25 @@ See [Map Pipeline](./map-pipeline.md) for complete operation reference and [Flow
 
 ### Stage 5: Transform (optional)
 
-Apply **pipe transforms** in order:
+Apply **transform registry operations** using the `$pipe` operation within the map pipeline:
 
 ```jsonc
 {
-  "pipe": ["filter-empty", "merge-shallow"]
+  "map": [
+    { "$rename": { "old": "new" } },
+    { "$pipe": ["json-to-toml"] }  // Apply transforms from registry
+  ]
 }
 ```
 
 **Available transforms:**
-- Format converters: `jsonc`, `yaml`, `toml`, `xml`, `ini`
-- Merging: `merge`, `merge-shallow`, `replace`
+- Format converters: `jsonc`, `yaml`, `toml`, `json-to-toml`, `toml-to-json`, `xml`, `ini`
 - Filtering: `filter-comments`, `filter-empty`, `filter-null`
 - Markdown: `sections`, `frontmatter`, `body`
 - Validation: `validate`, `validate-schema(path)`
 
-See [Flow Reference](./flow-reference.md#built-in-transforms) for all transforms.
+See [Map Pipeline](./map-pipeline.md#7-pipe---apply-transform-registry-operations) for `$pipe` details and 
+[Flow Reference](./flow-reference.md#built-in-transforms) for all available transforms.
 
 ### Stage 6: Namespace (optional)
 
@@ -1435,8 +1436,9 @@ Instead of automatic flow inversion, OpenPackage uses **explicit export and impo
     {
       "from": ["mcp.jsonc", "mcp.json"],
       "to": ".claude/.mcp.json",
-      "pipe": ["filter-comments"],
-      "map": [{ "$rename": { "mcp": "mcpServers" } }]
+      "map": [
+        { "$rename": { "mcp": "mcpServers" } }
+      ]
     }
   ]
 }

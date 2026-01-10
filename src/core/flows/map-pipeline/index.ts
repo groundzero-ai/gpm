@@ -6,6 +6,7 @@
  */
 
 import type { MapPipeline, MapContext, Operation, ValidationResult } from './types.js';
+import type { TransformRegistry } from '../flow-transforms.js';
 import { deepClone } from './utils.js';
 import { executeSet, validateSet } from './operations/set.js';
 import { executeRename, validateRename } from './operations/rename.js';
@@ -13,6 +14,7 @@ import { executeUnset, validateUnset } from './operations/unset.js';
 import { executeSwitch, validateSwitch } from './operations/switch.js';
 import { executePipeline, validatePipeline } from './operations/transform.js';
 import { executeCopy, validateCopy } from './operations/copy.js';
+import { executePipe, validatePipe } from './operations/pipe.js';
 
 /**
  * Apply map pipeline to a document
@@ -23,19 +25,21 @@ import { executeCopy, validateCopy } from './operations/copy.js';
  * @param document - Input document to transform
  * @param pipeline - Array of operations to apply
  * @param context - Context for variable resolution
+ * @param transformRegistry - Optional transform registry for $pipe operations
  * @returns Transformed document
  */
 export function applyMapPipeline(
   document: any,
   pipeline: MapPipeline,
-  context: MapContext
+  context: MapContext,
+  transformRegistry?: TransformRegistry
 ): any {
   // Start with a deep clone to avoid mutating input
   let result = deepClone(document);
 
   // Execute each operation in sequence
   for (const operation of pipeline) {
-    result = executeOperation(result, operation, context);
+    result = executeOperation(result, operation, context, transformRegistry);
   }
 
   return result;
@@ -47,7 +51,8 @@ export function applyMapPipeline(
 function executeOperation(
   document: any,
   operation: Operation,
-  context: MapContext
+  context: MapContext,
+  transformRegistry?: TransformRegistry
 ): any {
   if ('$set' in operation) {
     return executeSet(document, operation, context);
@@ -71,6 +76,13 @@ function executeOperation(
 
   if ('$copy' in operation) {
     return executeCopy(document, operation);
+  }
+
+  if ('$pipe' in operation) {
+    if (!transformRegistry) {
+      throw new Error('$pipe operation requires transform registry to be provided');
+    }
+    return executePipe(document, operation, transformRegistry);
   }
 
   // Unknown operation - return document unchanged
@@ -109,7 +121,7 @@ export function validateMapPipeline(pipeline: MapPipeline): ValidationResult {
 
     // Check that operation has exactly one operation key
     const operationKeys = Object.keys(operation);
-    const validOperations = ['$set', '$rename', '$unset', '$switch', '$pipeline', '$copy'];
+    const validOperations = ['$set', '$rename', '$unset', '$switch', '$pipeline', '$copy', '$pipe'];
     const operationKey = operationKeys.find(key => validOperations.includes(key));
 
     if (!operationKey) {
@@ -167,6 +179,10 @@ function validateOperation(operation: Operation): ValidationResult {
 
   if ('$copy' in operation) {
     return validateCopy(operation);
+  }
+
+  if ('$pipe' in operation) {
+    return validatePipe(operation);
   }
 
   return {

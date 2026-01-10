@@ -2,11 +2,9 @@
  * TOML Key Tracking Integration Test
  * 
  * Verifies that keys are properly extracted and tracked for TOML files
- * when using domain-specific transforms with merge strategies.
+ * when using map pipeline with json-to-toml transform and merge strategies.
  * 
- * Regression test for:
- * - Keys being empty when TOML transforms serialize to string
- * - mcp_servers prefix missing in TOML table headers
+ * Tests the map pipeline approach that replaced the legacy mcp-to-codex-toml transform.
  */
 
 import assert from 'node:assert/strict';
@@ -18,7 +16,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 describe('TOML Key Tracking Integration', () => {
-  it('should extract keys before TOML serialization with merge strategy', async () => {
+  it('should extract keys with map pipeline and json-to-toml transform', async () => {
     // Create temp directories
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'toml-key-test-'));
     const packageRoot = path.join(tmpDir, 'package');
@@ -47,14 +45,70 @@ describe('TOML Key Tracking Integration', () => {
       };
       await fs.writeFile(sourceFile, JSON.stringify(mcpConfig, null, 2));
 
-      // Define flow matching Codex platform configuration
+      // Define flow using map pipeline (Codex platform approach)
       const flow: Flow = {
         from: 'mcp.jsonc',
-        to: path.join(workspaceRoot, 'mcp-servers.toml'),
+        to: 'mcp-servers.toml',
         map: [
-          { $rename: { 'mcp': 'mcp_servers' } }
+          // 1. Rename root key
+          { $rename: { mcp: 'mcp_servers' } },
+          
+          // 2. Extract bearer token from Authorization header
+          {
+            $pipeline: {
+              field: 'mcp_servers.*.headers.Authorization',
+              operations: [
+                { $extract: { 
+                    pattern: '^Bearer \\$\\{env:([A-Z_][A-Z0-9_]*)\\}$',
+                    group: 1,
+                    default: '$SELF'
+                }}
+              ]
+            }
+          },
+          { $rename: { 'mcp_servers.*.headers.Authorization': 'mcp_servers.*.bearer_token_env_var' } },
+          
+          // 3. Partition headers into env and static
+          {
+            $pipeline: {
+              field: 'mcp_servers.*.headers',
+              operations: [
+                { $partition: {
+                    by: 'value',
+                    patterns: {
+                      env_http_headers: '^\\$\\{env:.*\\}$',
+                      http_headers: '.*'
+                    }
+                }}
+              ]
+            }
+          },
+          
+          // 4. Extract env var names from env_http_headers
+          {
+            $pipeline: {
+              field: 'mcp_servers.*.headers.env_http_headers',
+              operations: [
+                { $mapValues: {
+                    operations: [
+                      { $extract: { 
+                          pattern: '^\\$\\{env:([A-Z_][A-Z0-9_]*)\\}$',
+                          group: 1 
+                      }}
+                    ]
+                }}
+              ]
+            }
+          },
+          
+          // 5. Flatten to server level
+          { $rename: { 'mcp_servers.*.headers.http_headers': 'mcp_servers.*.http_headers' } },
+          { $rename: { 'mcp_servers.*.headers.env_http_headers': 'mcp_servers.*.env_http_headers' } },
+          { $unset: 'mcp_servers.*.headers' },
+          
+          // 6. Convert to TOML
+          { $pipe: ['json-to-toml'] }
         ],
-        pipe: ['mcp-to-codex-toml'],
         merge: 'deep'
       };
 
@@ -70,6 +124,12 @@ describe('TOML Key Tracking Integration', () => {
 
       const executor = new DefaultFlowExecutor();
       const result = await executor.executeFlow(flow, context);
+
+      // Debug logging
+      console.log('Flow result:', JSON.stringify(result, null, 2));
+      if (result.error) {
+        console.error('Error:', result.error);
+      }
 
       // Verify execution succeeded
       assert.equal(result.success, true, 'Flow should succeed');
@@ -113,16 +173,23 @@ describe('TOML Key Tracking Integration', () => {
         'TOML should not have extraneous indentation on table headers'
       );
       
-      // Verify bearer token extraction
+      // Verify bearer token extraction (via map pipeline)
       assert.ok(
         tomlContent.includes('bearer_token_env_var = "FIGMA_OAUTH_TOKEN"'),
-        'Bearer token should be extracted'
+        'Bearer token should be extracted via map pipeline'
       );
       
-      // Verify http_headers inline format
+      // Verify http_headers field exists (static headers partitioned correctly)
       assert.ok(
-        tomlContent.includes('http_headers = {'),
-        'http_headers should use inline table format'
+        tomlContent.includes('http_headers'),
+        'http_headers should be present after partition operation'
+      );
+      
+      // Verify no empty sections (fix for partition operation)
+      assert.ok(
+        !tomlContent.includes('[mcp_servers.figma.http_headers]') || 
+        !tomlContent.match(/\[mcp_servers\.figma\.http_headers\]\s*\n\s*\[/),
+        'Should not have empty http_headers section'
       );
 
     } finally {
@@ -160,14 +227,14 @@ args = [ "arg1" ]
       };
       await fs.writeFile(sourceFile, JSON.stringify(mcpConfig, null, 2));
 
-      // Define flow
+      // Define flow using map pipeline
       const flow: Flow = {
         from: 'mcp.jsonc',
-        to: path.join(workspaceRoot, 'mcp-servers.toml'),
+        to: 'mcp-servers.toml',
         map: [
-          { $rename: { 'mcp': 'mcp_servers' } }
+          { $rename: { 'mcp': 'mcp_servers' } },
+          { $pipe: ['json-to-toml'] }
         ],
-        pipe: ['mcp-to-codex-toml'],
         merge: 'deep'
       };
 

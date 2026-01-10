@@ -106,20 +106,13 @@
             }
           ]
         },
-        "pipe": {
-          "type": "array",
-          "description": "Transform pipeline - array of transform names to apply in order",
-          "items": {
-            "type": "string"
-          }
-        },
         "map": {
           "type": "array",
-          "description": "Map Pipeline - array of transformation operations",
+          "description": "Map Pipeline - array of transformation operations (includes $pipe for transform registry operations)",
           "minItems": 1,
           "items": {
             "type": "object",
-            "description": "A single map operation"
+            "description": "A single map operation ($set, $rename, $unset, $switch, $pipeline, $copy, $pipe)"
           }
         },
         "pick": {
@@ -182,16 +175,9 @@
           "description": "Whether this target is enabled (default: true)",
           "default": true
         },
-        "pipe": {
-          "type": "array",
-          "description": "Transform pipeline overrides",
-          "items": {
-            "type": "string"
-          }
-        },
         "map": {
           "type": "array",
-          "description": "Map Pipeline overrides",
+          "description": "Map Pipeline overrides (includes $pipe for transform registry operations)",
           "minItems": 1,
           "items": {
             "type": "object"

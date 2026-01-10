@@ -75,7 +75,7 @@ interface MapContext {
 - Prefix with `$$` to inject: `$$filename`, `$$dirname`, `$$path`, `$$ext`
 - Escape literal `$$`: use `\$$` to get literal string `$$filename`
 
-## Six Core Operations
+## Seven Core Operations
 
 ### 1. `$set` - Set Field Values
 
@@ -314,6 +314,70 @@ Copies a field to new location with optional pattern-based transformation.
 **MongoDB equivalent:** Custom operation (not in MongoDB)
 
 **See:** `src/core/flows/map-pipeline/operations/copy.ts`
+
+---
+
+### 7. `$pipe` - Apply Transform Registry Operations
+
+Applies external transforms from the transform registry within the map pipeline.
+Enables format conversions and validations to be interleaved with schema transformations.
+
+**Examples:**
+
+```jsonc
+// Convert to TOML at end of pipeline
+{
+  "$pipe": ["json-to-toml"]
+}
+
+// Parse TOML at start of pipeline
+{
+  "$pipe": ["toml-to-json"]
+}
+
+// Chain multiple transforms
+{
+  "$pipe": ["filter-comments", "jsonc", "validate-schema"]
+}
+```
+
+**Complete flow example:**
+
+```jsonc
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".codex/mcp-servers.toml",
+  "map": [
+    // Schema transformations
+    { "$rename": { "mcp": "mcp_servers" } },
+    {
+      "$pipeline": {
+        "field": "mcp_servers.*.headers.Authorization",
+        "operations": [
+          { "$extract": { 
+              "pattern": "^Bearer \\$\\{env:([A-Z_]+)\\}$",
+              "group": 1
+          }}
+        ]
+      }
+    },
+    // More transformations...
+    
+    // Convert to TOML at the end
+    { "$pipe": ["json-to-toml"] }
+  ]
+}
+```
+
+**Use cases:**
+- Format conversion: `json-to-toml`, `toml-to-json`, `yaml-to-json`
+- Pre-processing: `filter-comments`, `jsonc` (parse JSONC)
+- Post-processing: `validate-schema`, `format-toml`
+- Mid-pipeline validation: Apply validation between transformation steps
+
+**MongoDB equivalent:** Custom operation (bridges map pipeline with external systems)
+
+**See:** `src/core/flows/map-pipeline/operations/pipe.ts`
 
 ## Complete Examples
 
@@ -718,18 +782,20 @@ See `BREAKING_CHANGES.md` for complete migration guide.
 
 The Map Pipeline provides a powerful, MongoDB-aligned transformation system for document-level operations:
 
-✓ **6 core operations:** set, rename, unset, switch, pipeline, copy  
+✓ **7 core operations:** set, rename, unset, switch, pipeline, copy, pipe  
 ✓ **Context-aware:** Access file metadata with `$$` variables  
 ✓ **Sequential execution:** Predictable, composable transformations  
 ✓ **Type-safe:** Full TypeScript support  
 ✓ **Validated:** JSON Schema enforcement  
 ✓ **Tested:** Comprehensive test coverage  
 ✓ **Performant:** In-memory operations with minimal overhead  
-✓ **MongoDB-aligned:** Familiar operators for MongoDB developers
+✓ **MongoDB-aligned:** Familiar operators for MongoDB developers  
+✓ **Transform integration:** `$pipe` bridges map pipeline with transform registry
 
 For complete examples and usage patterns, see the related documentation above.
 
 ---
 
 **Map Pipeline v1.0** - Implemented in commit `e464927d2f5d2480c439a83c5cfc2e04053ac22d`  
-**MongoDB Alignment** - Updated January 9, 2026 (Breaking Change)
+**MongoDB Alignment** - Updated January 9, 2026 (Breaking Change)  
+**`$pipe` Operation** - Added January 2026

@@ -250,6 +250,58 @@ export function extractWildcardPart(key: string, prefix: string, suffix: string)
 }
 
 /**
+ * Resolve wildcard paths in a document
+ * 
+ * Supports wildcards (*) at any level to match dynamic keys.
+ * 
+ * Examples:
+ * - resolveWildcardPaths({ mcp: { a: { x: 1 }, b: { x: 2 } } }, "mcp.*.x")
+ *   → ["mcp.a.x", "mcp.b.x"]
+ * 
+ * - resolveWildcardPaths({ servers: { s1: { h: {} }, s2: {} } }, "servers.*.h")
+ *   → ["servers.s1.h"]
+ *   (Note: servers.s2.h is NOT included because it doesn't exist)
+ * 
+ * @param document - Document to search
+ * @param pattern - Field path with wildcards (* for any segment)
+ * @returns Array of resolved paths that match the pattern
+ */
+export function resolveWildcardPaths(
+  document: any,
+  pattern: string
+): string[] {
+  const segments = pattern.split('.');
+  const results: string[] = [];
+
+  function traverse(obj: any, depth: number, currentPath: string[]) {
+    if (depth >= segments.length) {
+      // Reached end of pattern - this is a match
+      results.push(currentPath.join('.'));
+      return;
+    }
+
+    const segment = segments[depth];
+
+    if (segment === '*') {
+      // Wildcard - match all keys at this level
+      if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
+        for (const key of Object.keys(obj)) {
+          traverse(obj[key], depth + 1, [...currentPath, key]);
+        }
+      }
+    } else {
+      // Literal segment - must match exactly
+      if (typeof obj === 'object' && obj !== null && segment in obj) {
+        traverse(obj[segment], depth + 1, [...currentPath, segment]);
+      }
+    }
+  }
+
+  traverse(document, 0, []);
+  return results;
+}
+
+/**
  * Deep clone an object
  */
 export function deepClone<T>(obj: T): T {

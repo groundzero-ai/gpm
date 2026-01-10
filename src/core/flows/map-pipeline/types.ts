@@ -37,7 +37,8 @@ export type Operation =
   | UnsetOperation
   | SwitchOperation
   | PipelineOperation
-  | CopyOperation;
+  | CopyOperation
+  | PipeOperation;
 
 /**
  * $set - Set field value(s)
@@ -148,7 +149,11 @@ export type PipelineStep =
   | ArrayToObjectStep
   | MapStep
   | ReduceStep
-  | ReplaceStep;
+  | ReplaceStep
+  | PartitionStep
+  | ExtractStep
+  | MapValuesStep
+  | MergeFieldsStep;
 
 /**
  * $filter - Filter entries by key or value (matches MongoDB $filter)
@@ -295,6 +300,113 @@ export interface CopyOperation {
       default?: any;
     };
   };
+}
+
+/**
+ * $partition - Split object entries into buckets by pattern
+ * 
+ * Example:
+ * {
+ *   "$partition": {
+ *     "by": "value",
+ *     "patterns": {
+ *       "env": "^\\$\\{env:.*\\}$",
+ *       "static": ".*"
+ *     }
+ *   }
+ * }
+ */
+export interface PartitionStep {
+  $partition: {
+    /** Partition by value or key */
+    by: 'value' | 'key';
+    
+    /** Bucket name → regex pattern mapping */
+    patterns: Record<string, string>;
+  };
+}
+
+/**
+ * $extract - Extract substring using regex capture groups
+ * 
+ * Example:
+ * {
+ *   "$extract": {
+ *     "pattern": "^Bearer \\$\\{env:([A-Z_]+)\\}$",
+ *     "group": 1,
+ *     "default": "$SELF"
+ *   }
+ * }
+ */
+export interface ExtractStep {
+  $extract: {
+    /** Regex pattern with capture groups */
+    pattern: string;
+    
+    /** Capture group to extract (0 = full match) */
+    group: number;
+    
+    /** Default if no match ("$SELF" = keep original) */
+    default?: string;
+  };
+}
+
+/**
+ * $mapValues - Apply transformation to each value in object
+ * 
+ * Example:
+ * {
+ *   "$mapValues": {
+ *     "operations": [
+ *       { "$extract": { "pattern": "^\\$\\{env:([A-Z_]+)\\}$", "group": 1 } }
+ *     ]
+ *   }
+ * }
+ */
+export interface MapValuesStep {
+  $mapValues: {
+    /** Sub-pipeline to apply to each value */
+    operations: PipelineStep[];
+  };
+}
+
+/**
+ * $mergeFields - Merge multiple fields into one
+ * 
+ * Example:
+ * {
+ *   "$mergeFields": {
+ *     "from": ["http_headers", "env_http_headers"],
+ *     "to": "headers"
+ *   }
+ * }
+ */
+export interface MergeFieldsStep {
+  $mergeFields: {
+    /** Source field names */
+    from: string[];
+    
+    /** Target field name */
+    to: string;
+    
+    /** Remove source fields? (default: true) */
+    remove?: boolean;
+  };
+}
+
+/**
+ * $pipe - Apply external pipe transforms
+ * 
+ * Bridges map pipeline with transform registry.
+ * Enables format conversions and validations within the map flow.
+ * 
+ * Example:
+ * {
+ *   "$pipe": ["filter-comments", "json-to-toml"]
+ * }
+ */
+export interface PipeOperation {
+  $pipe: string[];  // Array of transform names from registry
 }
 
 /**

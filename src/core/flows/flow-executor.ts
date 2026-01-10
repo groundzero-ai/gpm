@@ -280,13 +280,6 @@ export class DefaultFlowExecutor implements FlowExecutor {
       errors.push({ message: 'Flow missing required field "to"', code: 'MISSING_TO' });
     }
 
-    // Validate pipe transforms
-    if (flow.pipe) {
-      if (!Array.isArray(flow.pipe)) {
-        errors.push({ message: 'Flow "pipe" must be an array', code: 'INVALID_PIPE' });
-      }
-    }
-
     // Validate pick/omit
     if (flow.pick && flow.omit) {
       errors.push({ message: 'Flow cannot have both "pick" and "omit"', code: 'CONFLICTING_FILTERS' });
@@ -381,47 +374,68 @@ export class DefaultFlowExecutor implements FlowExecutor {
       }
 
       // Step 4: Apply map pipeline
+      // Split into schema operations and pipe operations
+      // Schema ops are applied BEFORE merge, pipe ops are applied AFTER merge
+      let contributedKeys: string[] | undefined;
+      let schemaOps: any[] = [];
+      let pipeOps: any[] = [];
+      
       if (flow.map) {
-        // Use the actual source path for map context
-        const mapContext = createMapContext({
-          filename: path.basename(sourcePath, path.extname(sourcePath)),
-          dirname: path.basename(path.dirname(sourcePath)),
-          path: path.relative(context.packageRoot, sourcePath),
-          ext: path.extname(sourcePath),
-        });
-        
-        // For markdown files, apply to frontmatter
-        if (data && typeof data === 'object' && 'frontmatter' in data) {
-          data.frontmatter = applyMapPipeline(data.frontmatter, flow.map, mapContext);
-        } else {
-          // Apply to entire document
-          data = applyMapPipeline(data, flow.map, mapContext);
+        // Separate schema operations from pipe operations
+        for (const op of flow.map) {
+          if ('$pipe' in op) {
+            pipeOps.push(op);
+          } else {
+            schemaOps.push(op);
+          }
         }
-        transformed = true;
+        
+        // Apply schema operations first (before merge)
+        if (schemaOps.length > 0) {
+          const mapContext = createMapContext({
+            filename: path.basename(sourcePath, path.extname(sourcePath)),
+            dirname: path.basename(path.dirname(sourcePath)),
+            path: path.relative(context.packageRoot, sourcePath),
+            ext: path.extname(sourcePath),
+          });
+          
+          // For markdown files, apply to frontmatter
+          if (data && typeof data === 'object' && 'frontmatter' in data) {
+            data.frontmatter = applyMapPipeline(
+              data.frontmatter, 
+              schemaOps, 
+              mapContext,
+              this.transformRegistry
+            );
+          } else {
+            // Apply to entire document
+            data = applyMapPipeline(
+              data, 
+              schemaOps, 
+              mapContext,
+              this.transformRegistry
+            );
+          }
+          transformed = true;
+        }
       }
-
-      // Step 5: Apply pipe transforms (but defer final serialization)
-      // NOTE: For TOML targets with domain transforms, we need to keep data as object
-      // until after key extraction
-      if (flow.pipe && flow.pipe.length > 0) {
-        data = await this.applyPipeTransforms(data, flow.pipe, context);
-        transformed = true;
-      }
-
+      
+      // Track keys AFTER schema transforms but BEFORE merge and pipe transforms
+      // This represents the structured data this package contributes
       const shouldTrackKeys =
         Boolean(flow.merge) &&
         flow.merge !== 'replace' &&
         flow.merge !== 'composite';
+        
+      if (shouldTrackKeys && typeof data === 'object' && data !== null) {
+        // Extract from frontmatter if it's a markdown file
+        const dataToExtract = (data && 'frontmatter' in data) ? data.frontmatter : data;
+        if (typeof dataToExtract === 'object' && dataToExtract !== null) {
+          contributedKeys = extractAllKeys(dataToExtract);
+        }
+      }
 
       const targetExists = await fsUtils.exists(targetPath);
-
-      // Track keys for merged files (for precise uninstall)
-      // IMPORTANT: Extract keys AFTER schema transforms but BEFORE final serialization
-      // This represents what THIS package contributes, regardless of target state
-      let contributedKeys: string[] | undefined;
-      if (shouldTrackKeys && typeof data === 'object' && data !== null) {
-        contributedKeys = extractAllKeys(data);
-      }
 
       // Step 6: Embed in target structure
       if (flow.embed) {
@@ -454,6 +468,36 @@ export class DefaultFlowExecutor implements FlowExecutor {
             transformed = true;
           }
         }
+      }
+
+      // Step 7.5: Apply pipe operations AFTER merge (format conversions)
+      // These operations may convert the data to a string format (e.g., json-to-toml)
+      if (pipeOps.length > 0) {
+        const mapContext = createMapContext({
+          filename: path.basename(sourcePath, path.extname(sourcePath)),
+          dirname: path.basename(path.dirname(sourcePath)),
+          path: path.relative(context.packageRoot, sourcePath),
+          ext: path.extname(sourcePath),
+        });
+        
+        // For markdown files, apply to frontmatter
+        if (data && typeof data === 'object' && 'frontmatter' in data) {
+          data.frontmatter = applyMapPipeline(
+            data.frontmatter, 
+            pipeOps, 
+            mapContext,
+            this.transformRegistry
+          );
+        } else {
+          // Apply to entire document
+          data = applyMapPipeline(
+            data, 
+            pipeOps, 
+            mapContext,
+            this.transformRegistry
+          );
+        }
+        transformed = true;
       }
 
       // Step 8: Write to target file
@@ -977,7 +1021,6 @@ export class DefaultFlowExecutor implements FlowExecutor {
     if (flow.pick) pipeline.push('pick');
     if (flow.omit) pipeline.push('omit');
     if (flow.map) pipeline.push('map');
-    if (flow.pipe) pipeline.push(...flow.pipe);
     if (flow.embed) pipeline.push('embed');
     if (flow.merge) pipeline.push(`merge:${flow.merge}`);
 

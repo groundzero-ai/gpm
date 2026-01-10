@@ -6,15 +6,18 @@
  */
 
 import type { UnsetOperation } from '../types.js';
-import { deleteNestedValue } from '../utils.js';
+import { deleteNestedValue, resolveWildcardPaths } from '../utils.js';
 
 /**
  * Execute $unset operation
+ * 
+ * Supports wildcard paths for batch deletion.
  * 
  * Examples:
  * - { "$unset": "permission" }
  * - { "$unset": ["permission", "legacy", "temp"] }
  * - { "$unset": "config.deprecated" }
+ * - { "$unset": "mcp_servers.*.headers" }  // Wildcard
  */
 export function executeUnset(
   document: any,
@@ -24,7 +27,19 @@ export function executeUnset(
   const fields = Array.isArray(operation.$unset) ? operation.$unset : [operation.$unset];
 
   for (const fieldPath of fields) {
-    deleteNestedValue(result, fieldPath);
+    // Check for wildcard
+    if (fieldPath.includes('*')) {
+      // Resolve wildcard paths
+      const matchedPaths = resolveWildcardPaths(result, fieldPath);
+      
+      // Delete all matched paths
+      for (const path of matchedPaths) {
+        deleteNestedValue(result, path);
+      }
+    } else {
+      // Single field
+      deleteNestedValue(result, fieldPath);
+    }
   }
 
   return result;

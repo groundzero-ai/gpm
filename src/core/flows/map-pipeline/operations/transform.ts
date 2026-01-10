@@ -7,24 +7,13 @@
  */
 
 import type { PipelineOperation, PipelineStep, MapContext } from '../types.js';
-import { getNestedValue, setNestedValue } from '../utils.js';
+import { getNestedValue, setNestedValue, deleteNestedValue, resolveWildcardPaths } from '../utils.js';
 import { resolveValue } from '../context.js';
 
 /**
  * Execute $pipeline operation
  * 
- * Example:
- * {
- *   "$pipeline": {
- *     "field": "tools",
- *     "operations": [
- *       { "$filter": { "match": { "value": true } } },
- *       { "$objectToArray": { "extract": "keys" } },
- *       { "$map": { "each": "capitalize" } },
- *       { "$reduce": { "type": "join", "separator": ", " } }
- *     ]
- *   }
- * }
+ * Supports wildcard paths for batch transformations.
  */
 export function executePipeline(
   document: any,
@@ -34,35 +23,44 @@ export function executePipeline(
   const result = { ...document };
   const { field, operations } = operation.$pipeline;
 
-  // Get current value
-  let value = getNestedValue(result, field);
+  // Check if field contains wildcard
+  const hasWildcard = field.includes('*');
 
-  // Apply each operation in sequence
-  for (const step of operations) {
-    value = applyPipelineStep(value, step, context);
-  }
+  if (hasWildcard) {
+    // Wildcard mode: resolve all matching paths
+    const matchedPaths = resolveWildcardPaths(result, field);
 
-  // If the transformed value is an empty string or empty array, unset the field
-  // This prevents fields like "tools: ''" which are semantically invalid
-  if (value === '' || (Array.isArray(value) && value.length === 0)) {
-    // Delete the field entirely
-    const pathParts = field.split('.');
-    if (pathParts.length === 1) {
-      delete result[field];
-    } else {
-      // For nested paths, we need to navigate and delete
-      let current = result;
-      for (let i = 0; i < pathParts.length - 1; i++) {
-        if (!(pathParts[i] in current)) {
-          return result; // Path doesn't exist, nothing to delete
-        }
-        current = current[pathParts[i]];
+    if (matchedPaths.length === 0) {
+      return result;
+    }
+
+    // Apply pipeline to each matched path independently
+    for (const path of matchedPaths) {
+      let value = getNestedValue(result, path);
+
+      for (const step of operations) {
+        value = applyPipelineStep(value, step, context);
       }
-      delete current[pathParts[pathParts.length - 1]];
+
+      if (value === '' || (Array.isArray(value) && value.length === 0)) {
+        deleteNestedValue(result, path);
+      } else {
+        setNestedValue(result, path, value);
+      }
     }
   } else {
-    // Set transformed value
-    setNestedValue(result, field, value);
+    // Single field mode
+    let value = getNestedValue(result, field);
+
+    for (const step of operations) {
+      value = applyPipelineStep(value, step, context);
+    }
+
+    if (value === '' || (Array.isArray(value) && value.length === 0)) {
+      deleteNestedValue(result, field);
+    } else {
+      setNestedValue(result, field, value);
+    }
   }
 
   return result;
@@ -94,6 +92,22 @@ function applyPipelineStep(value: any, step: PipelineStep, context: MapContext):
 
   if ('$replace' in step) {
     return applyReplace(value, step.$replace);
+  }
+
+  if ('$partition' in step) {
+    return applyPartition(value, step.$partition);
+  }
+
+  if ('$extract' in step) {
+    return applyExtract(value, step.$extract);
+  }
+
+  if ('$mapValues' in step) {
+    return applyMapValues(value, step.$mapValues, context);
+  }
+
+  if ('$mergeFields' in step) {
+    return applyMergeFields(value, step.$mergeFields);
   }
 
   // Unknown step - return unchanged
@@ -309,6 +323,126 @@ function applyReplace(
   return value.replace(regex, config.with);
 }
 
+// ============================================================================
+// New Atomic Operations
+// ============================================================================
+
+/**
+ * $partition step - Split object entries into buckets by pattern
+ */
+function applyPartition(
+  value: any,
+  config: { by: 'value' | 'key'; patterns: Record<string, string> }
+): any {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const result: Record<string, any> = {};
+
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    const testValue = config.by === 'value' ? String(entryValue) : entryKey;
+    
+    for (const [bucketName, pattern] of Object.entries(config.patterns)) {
+      const regex = new RegExp(pattern);
+      if (regex.test(testValue)) {
+        // Only create bucket if it doesn't exist yet
+        if (!result[bucketName]) {
+          result[bucketName] = {};
+        }
+        result[bucketName][entryKey] = entryValue;
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * $extract step - Extract substring using regex capture groups
+ */
+function applyExtract(
+  value: any,
+  config: { pattern: string; group: number; default?: string }
+): any {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const regex = new RegExp(config.pattern);
+  const match = value.match(regex);
+  
+  if (!match) {
+    if (config.default === '$SELF') {
+      return value;
+    }
+    return config.default !== undefined ? config.default : value;
+  }
+
+  return match[config.group];
+}
+
+/**
+ * $mapValues step - Apply transformation to each value in object
+ */
+function applyMapValues(
+  value: any,
+  config: { operations: PipelineStep[] },
+  context: MapContext
+): any {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const result: any = {};
+  
+  for (const [key, val] of Object.entries(value)) {
+    let transformedValue = val;
+    
+    for (const step of config.operations) {
+      transformedValue = applyPipelineStep(transformedValue, step, context);
+    }
+    
+    result[key] = transformedValue;
+  }
+
+  return result;
+}
+
+/**
+ * $mergeFields step - Merge multiple fields into one
+ */
+function applyMergeFields(
+  value: any,
+  config: { from: string[]; to: string; remove?: boolean }
+): any {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const result = { ...value };
+  const merged: any = {};
+
+  for (const sourceKey of config.from) {
+    if (sourceKey in result) {
+      const sourceValue = result[sourceKey];
+      if (typeof sourceValue === 'object' && sourceValue !== null) {
+        Object.assign(merged, sourceValue);
+      }
+      
+      if (config.remove !== false) {
+        delete result[sourceKey];
+      }
+    }
+  }
+
+  if (Object.keys(merged).length > 0) {
+    result[config.to] = merged;
+  }
+
+  return result;
+}
 
 /**
  * Validate $pipeline operation
@@ -351,7 +485,18 @@ export function validatePipeline(operation: PipelineOperation): { valid: boolean
     }
 
     const operation = stepKeys[0];
-    const validOps = ['$filter', '$objectToArray', '$arrayToObject', '$map', '$reduce', '$replace'];
+    const validOps = [
+      '$filter', 
+      '$objectToArray', 
+      '$arrayToObject', 
+      '$map', 
+      '$reduce', 
+      '$replace',
+      '$partition',
+      '$extract',
+      '$mapValues',
+      '$mergeFields'
+    ];
     
     if (!validOps.includes(operation)) {
       errors.push(
@@ -442,6 +587,61 @@ export function validatePipeline(operation: PipelineOperation): { valid: boolean
         }
         if (config.flags !== undefined && typeof config.flags !== 'string') {
           errors.push(`$pipeline.operations[${i}].$replace.flags must be a string`);
+        }
+      }
+    }
+
+    if (operation === '$partition') {
+      const config = (step as any).$partition;
+      if (!config || typeof config !== 'object') {
+        errors.push(`$pipeline.operations[${i}].$partition must be an object`);
+      } else {
+        if (!config.by || !['value', 'key'].includes(config.by)) {
+          errors.push(`$pipeline.operations[${i}].$partition.by must be "value" or "key"`);
+        }
+        if (!config.patterns || typeof config.patterns !== 'object') {
+          errors.push(`$pipeline.operations[${i}].$partition.patterns must be an object`);
+        } else if (Object.keys(config.patterns).length === 0) {
+          errors.push(`$pipeline.operations[${i}].$partition.patterns must have at least one pattern`);
+        }
+      }
+    }
+
+    if (operation === '$extract') {
+      const config = (step as any).$extract;
+      if (!config || typeof config !== 'object') {
+        errors.push(`$pipeline.operations[${i}].$extract must be an object`);
+      } else {
+        if (typeof config.pattern !== 'string') {
+          errors.push(`$pipeline.operations[${i}].$extract.pattern must be a string`);
+        }
+        if (typeof config.group !== 'number') {
+          errors.push(`$pipeline.operations[${i}].$extract.group must be a number`);
+        }
+      }
+    }
+
+    if (operation === '$mapValues') {
+      const config = (step as any).$mapValues;
+      if (!config || typeof config !== 'object') {
+        errors.push(`$pipeline.operations[${i}].$mapValues must be an object`);
+      } else if (!Array.isArray(config.operations)) {
+        errors.push(`$pipeline.operations[${i}].$mapValues.operations must be an array`);
+      } else if (config.operations.length === 0) {
+        errors.push(`$pipeline.operations[${i}].$mapValues.operations must have at least one operation`);
+      }
+    }
+
+    if (operation === '$mergeFields') {
+      const config = (step as any).$mergeFields;
+      if (!config || typeof config !== 'object') {
+        errors.push(`$pipeline.operations[${i}].$mergeFields must be an object`);
+      } else {
+        if (!Array.isArray(config.from) || config.from.length === 0) {
+          errors.push(`$pipeline.operations[${i}].$mergeFields.from must be a non-empty array`);
+        }
+        if (typeof config.to !== 'string') {
+          errors.push(`$pipeline.operations[${i}].$mergeFields.to must be a string`);
         }
       }
     }

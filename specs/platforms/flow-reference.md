@@ -11,8 +11,7 @@ interface Flow {
   to: string | MultiTargetFlows
   
   // Optional transforms
-  pipe?: string[]
-  map?: KeyMap
+  map?: Operation[]  // Map pipeline (includes $pipe for transform registry ops)
   pick?: string[]
   omit?: string[]
   path?: string
@@ -115,33 +114,34 @@ Each target key maps to an object with any flow options except `from`, `to`, and
 
 ## Transform Fields
 
-### `pipe` (string[])
+### `$pipe` (Map Operation)
 
-Ordered list of transforms to apply to content.
+Apply transform registry operations within the map pipeline using the `$pipe` operation.
 
 **Example:**
 ```jsonc
 {
-  "pipe": ["filter-empty", "merge", "validate"]
+  "map": [
+    { "$rename": { "old": "new" } },
+    { "$pipe": ["json-to-toml"] }
+  ]
 }
 ```
 
 **Built-in transforms:**
 
 #### Format Converters
-- `jsonc` - Parse/emit JSON with comments
-- `yaml` - Parse/emit YAML
-- `toml` - Parse/emit TOML
+- `jsonc` - Parse JSON with comments
+- `json` - Parse/stringify JSON
+- `yaml` - Parse/stringify YAML
+- `toml` - Parse/stringify TOML
+- `json-to-toml` - Convert JSON object to TOML string
+- `toml-to-json` - Convert TOML string to JSON object
 - `xml` - Parse/emit XML
 - `ini` - Parse/emit INI
 
-#### Merging
-- `merge` - Deep merge with existing target
-- `merge-shallow` - Shallow merge with existing target
-- `replace` - Replace target entirely
-
 #### Filtering
-- `filter-comments` - Remove comment fields
+- `filter-comments` - Remove comments from strings
 - `filter-empty` - Remove empty objects/arrays
 - `filter-null` - Remove null values
 
@@ -1124,9 +1124,9 @@ skills/                            .claude/skills/
   "to": ".cursor/config.json",
   "pick": ["editor", "terminal"],
   "map": [
-    { "$rename": { "editor.theme": "workbench.colorTheme" } }
+    { "$rename": { "editor.theme": "workbench.colorTheme" } },
+    { "$pipe": ["filter-empty", "filter-null"] }
   ],
-  "pipe": ["filter-empty", "filter-null"],
   "merge": "deep"
 }
 ```
@@ -1134,7 +1134,7 @@ skills/                            .claude/skills/
 **Behavior:**
 - Extracts only `editor` and `terminal` keys
 - Renames nested theme key using map pipeline
-- Filters empty/null values
+- Filters empty/null values using $pipe operation
 - Deep merges result
 
 ## Best Practices

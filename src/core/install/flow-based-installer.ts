@@ -1288,15 +1288,7 @@ function stripContentTransformations(flows: Flow[]): Flow[] {
       strippedFlow.when = flow.when;
     }
     
-    // Keep only format conversion pipes (yaml, json, toml, etc.)
-    // Skip filtering/transformation pipes
-    if (flow.pipe && flow.pipe.length > 0) {
-      const formatConverters = ['yaml', 'json', 'jsonc', 'toml', 'xml', 'ini', 'filter-comments'];
-      const filteredPipes = flow.pipe.filter(p => formatConverters.includes(p));
-      if (filteredPipes.length > 0) {
-        strippedFlow.pipe = filteredPipes;
-      }
-    }
+    // Note: pipe transforms are now handled within the map pipeline via $pipe operation
     
     // Explicitly skip map transformations (commented for clarity)
     // strippedFlow.map = undefined;
