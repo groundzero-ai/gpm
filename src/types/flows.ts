@@ -433,3 +433,101 @@ export interface Priority {
   /** Package name */
   package: string;
 }
+
+// ============================================================================
+// MCP (Model Context Protocol) Types
+// ============================================================================
+
+/**
+ * MCP server configuration (universal format)
+ * This is the canonical format used in package files (mcp.jsonc)
+ */
+export interface McpServer {
+  // STDIO servers (local process)
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  env_vars?: string[];
+  cwd?: string;
+  
+  // HTTP servers (streamable)
+  url?: string;
+  headers?: Record<string, string>;
+  
+  // Common options
+  enabled?: boolean;
+  timeout?: number;
+  enabled_tools?: string[];
+  disabled_tools?: string[];
+}
+
+/**
+ * MCP configuration root (universal format)
+ */
+export interface McpConfig {
+  mcp: Record<string, McpServer>;
+}
+
+/**
+ * Codex TOML MCP server configuration
+ * This is the Codex-specific format used in .codex/mcp-servers.toml
+ */
+export interface CodexMcpServer {
+  // STDIO servers
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  env_vars?: string[];
+  cwd?: string;
+  
+  // HTTP servers
+  url?: string;
+  bearer_token_env_var?: string;  // Extracted from Authorization header
+  http_headers?: Record<string, string>;  // Headers without Authorization
+  env_http_headers?: Record<string, string>;
+  
+  // Common options
+  enabled?: boolean;
+  startup_timeout_sec?: number;
+  tool_timeout_sec?: number;
+  enabled_tools?: string[];
+  disabled_tools?: string[];
+}
+
+/**
+ * Codex MCP configuration root
+ */
+export interface CodexMcpConfig {
+  mcp_servers: Record<string, CodexMcpServer>;
+}
+
+/**
+ * Transform options for MCP → Codex conversion
+ */
+export interface McpToCodexOptions {
+  /** Use inline tables for http_headers (default: true) */
+  inlineTables?: boolean;
+  
+  /** Extract Authorization header to bearer_token_env_var (default: true) */
+  extractBearerToken?: boolean;
+  
+  /** Convert timeout to startup_timeout_sec (default: true) */
+  convertTimeouts?: boolean;
+}
+
+/**
+ * TOML formatting options
+ */
+export interface TomlFormatOptions {
+  /** Use inline tables for simple objects (default: false) */
+  inlineTables?: string[];
+  
+  /** Maximum inline table complexity (default: 3 keys) */
+  maxInlineKeys?: number;
+  
+  /** Indent for nested tables (default: 0) */
+  indent?: number;
+  
+  /** Newlines between sections (default: true) */
+  sectionSpacing?: boolean;
+}

@@ -16,7 +16,7 @@ import { promises as fs } from 'fs';
 import fsSync from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import * as TOML from '@iarna/toml';
+import * as TOML from 'smol-toml';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { JSONPath } from 'jsonpath-plus';
 import { minimatch } from 'minimatch';
@@ -400,15 +400,11 @@ export class DefaultFlowExecutor implements FlowExecutor {
         transformed = true;
       }
 
-      // Step 5: Apply pipe transforms
+      // Step 5: Apply pipe transforms (but defer final serialization)
+      // NOTE: For TOML targets with domain transforms, we need to keep data as object
+      // until after key extraction
       if (flow.pipe && flow.pipe.length > 0) {
         data = await this.applyPipeTransforms(data, flow.pipe, context);
-        transformed = true;
-      }
-
-      // Step 6: Embed in target structure
-      if (flow.embed) {
-        data = this.embedContent(data, flow.embed);
         transformed = true;
       }
 
@@ -420,11 +416,17 @@ export class DefaultFlowExecutor implements FlowExecutor {
       const targetExists = await fsUtils.exists(targetPath);
 
       // Track keys for merged files (for precise uninstall)
-      // Extract keys from SOURCE data BEFORE merging with target
+      // IMPORTANT: Extract keys AFTER schema transforms but BEFORE final serialization
       // This represents what THIS package contributes, regardless of target state
       let contributedKeys: string[] | undefined;
-      if (shouldTrackKeys) {
+      if (shouldTrackKeys && typeof data === 'object' && data !== null) {
         contributedKeys = extractAllKeys(data);
+      }
+
+      // Step 6: Embed in target structure
+      if (flow.embed) {
+        data = this.embedContent(data, flow.embed);
+        transformed = true;
       }
 
       // Step 7: Merge with existing target (if needed)
@@ -506,6 +508,7 @@ export class DefaultFlowExecutor implements FlowExecutor {
     await fsUtils.ensureDir(path.dirname(filePath));
     // Detect target format from file extension
     const targetFormat = this.detectFormat(filePath, '');
+
     const serialized = this.serializeTargetContent(content, targetFormat);
     await fsUtils.writeTextFile(filePath, serialized);
   }
@@ -534,7 +537,11 @@ export class DefaultFlowExecutor implements FlowExecutor {
           return yaml.load(content);
 
         case 'toml':
-          return TOML.parse(content);
+          try {
+            return TOML.parse(content);
+          } catch (error) {
+            throw new Error(`TOML parse error: ${error instanceof Error ? error.message : String(error)}`);
+          }
 
         case 'markdown':
         case 'md':
@@ -565,7 +572,24 @@ export class DefaultFlowExecutor implements FlowExecutor {
           return yaml.dump(content, { indent: 2, lineWidth: -1 });
 
         case 'toml':
-          return TOML.stringify(content);
+          // If a pipeline already produced TOML text (e.g. via domain transforms),
+          // don't stringify again.
+          if (typeof content === 'string') {
+            return content;
+          }
+          try {
+            // Serialize to TOML
+            let toml = TOML.stringify(content);
+            
+            // Apply inline table formatting for Codex MCP configs
+            if (content && typeof content === 'object' && content.mcp_servers) {
+              toml = this.applyCodexTomlFormatting(toml);
+            }
+            
+            return toml;
+          } catch (error) {
+            throw new Error(`TOML stringify error: ${error instanceof Error ? error.message : String(error)}`);
+          }
 
         case 'markdown':
         case 'md':
@@ -1069,6 +1093,46 @@ export class DefaultFlowExecutor implements FlowExecutor {
    */
   private deleteNestedValue(obj: any, path: string): void {
     deleteNestedValue(obj, path);
+  }
+
+  /**
+   * Apply Codex-specific TOML formatting
+   * Converts nested table sections to inline format for http_headers and env_http_headers
+   */
+  private applyCodexTomlFormatting(toml: string): string {
+    const inlineKeys = ['http_headers', 'env_http_headers'];
+    let result = toml;
+
+    for (const key of inlineKeys) {
+      // Pattern to match nested table sections for the key
+      const pattern = new RegExp(
+        `\\[([\\w-]+(?:\\.[\\w-]+|\\."[^"]+")*)?\\.${key}\\]\\s*\\n([\\s\\S]*?)(?=\\n\\[|\\n*$)`,
+        'g'
+      );
+
+      result = result.replace(pattern, (match, parentPath, content) => {
+        const pairs: string[] = [];
+        const lines = content.trim().split('\n');
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+
+          const kvMatch = trimmed.match(/^([\w-]+)\s*=\s*(.+)$/);
+          if (kvMatch) {
+            const [, k, v] = kvMatch;
+            pairs.push(`"${k}" = ${v}`);
+          }
+        }
+
+        if (pairs.length === 0) return match;
+
+        const inlineTable = `{ ${pairs.join(', ')} }`;
+        return `${key} = ${inlineTable}`;
+      });
+    }
+
+    return result;
   }
 }
 

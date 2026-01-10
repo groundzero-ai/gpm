@@ -7,8 +7,9 @@
  */
 
 import yaml from 'js-yaml';
-import * as toml from '@iarna/toml';
+import * as TOML from 'smol-toml';
 import { logger } from '../../utils/logger.js';
+import { registerTomlDomainTransforms } from './toml-domain-transforms.js';
 
 /**
  * Transform function interface
@@ -124,6 +125,8 @@ export const yamlTransform: Transform = {
 
 /**
  * Convert between TOML and object
+ * 
+ * Uses smol-toml for TOML v1.0.0 compliant serialization and parsing.
  */
 export const tomlTransform: Transform = {
   name: 'toml',
@@ -134,11 +137,39 @@ export const tomlTransform: Transform = {
       if (typeof input !== 'string') {
         return input;
       }
-      return toml.parse(input);
+      try {
+        return TOML.parse(input);
+      } catch (error) {
+        throw new Error(`TOML parse error: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } else {
       // stringify
-      return toml.stringify(input);
+      try {
+        return TOML.stringify(input);
+      } catch (error) {
+        throw new Error(`TOML stringify error: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
+  },
+};
+
+/**
+ * Convert JSON object to TOML string
+ */
+export const jsonToTomlTransform: Transform = {
+  name: 'json-to-toml',
+  execute(input: any): string {
+    return tomlTransform.execute(input, { direction: 'stringify' });
+  },
+};
+
+/**
+ * Convert TOML string to JSON object
+ */
+export const tomlToJsonTransform: Transform = {
+  name: 'toml-to-json',
+  execute(input: string): any {
+    return tomlTransform.execute(input, { direction: 'parse' });
   },
 };
 
@@ -641,6 +672,8 @@ export function createDefaultTransformRegistry(): TransformRegistry {
   registry.register(jsoncTransform);
   registry.register(yamlTransform);
   registry.register(tomlTransform);
+  registry.register(jsonToTomlTransform);
+  registry.register(tomlToJsonTransform);
 
   // Content filters
   registry.register(filterCommentsTransform);
@@ -682,6 +715,9 @@ export function createDefaultTransformRegistry(): TransformRegistry {
 
   // Validation
   registry.register(validateTransform);
+
+  // Domain-specific TOML transforms (MCP, Codex, etc.)
+  registerTomlDomainTransforms(registry);
 
   return registry;
 }

@@ -11,7 +11,7 @@ import { logger } from '../../utils/logger.js';
 import type { WorkspaceIndexFileMapping } from '../../types/workspace-index.js';
 import { deleteNestedKey, isEffectivelyEmpty } from '../flows/flow-key-extractor.js';
 import yaml from 'js-yaml';
-import * as TOML from '@iarna/toml';
+import * as TOML from 'smol-toml';
 
 /**
  * File format detection

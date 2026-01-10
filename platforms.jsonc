@@ -219,10 +219,10 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".codex/mcp-servers.toml",
-        "pipe": ["filter-comments", "json-to-toml"],
         "map": [
           { "$rename": { "mcp": "mcp_servers" } }
         ],
+        "pipe": ["filter-comments", "mcp-to-codex-schema"],
         "merge": "deep"
       }
     ],
@@ -234,7 +234,7 @@
       {
         "from": ".codex/mcp-servers.toml",
         "to": "mcp.jsonc",
-        "pipe": ["toml-to-json"],
+        "pipe": ["codex-toml-to-mcp"],
         "map": [
           { "$rename": { "mcp_servers": "mcp" } }
         ]
