@@ -88,7 +88,7 @@ async function installCommand(
         
         return await runPathInstallPipeline({
           ...options,
-          sourcePath: result.repoPath,
+          sourcePath: result.sourcePath,
           sourceType: 'directory',
           targetDir,
           gitUrl: existingSource.url,
@@ -156,7 +156,7 @@ async function installCommand(
     // Not a marketplace, install as regular package/plugin
     return await runPathInstallPipeline({
       ...options,
-      sourcePath: result.repoPath,
+      sourcePath: result.sourcePath,
       sourceType: 'directory',
       targetDir,
       gitUrl: classification.gitUrl,

@@ -9,6 +9,14 @@ export interface PrintPlatformSyncSummaryOptions {
   packageContext: PackageContext;
   version: string;
   packageFiles: PackageFile[];
+  /**
+   * Optional explicit list of files to display (used when caller wants to show
+   * workspace targets instead of package-relative registry files).
+   */
+  displayFiles?: {
+    paths: string[];
+    kind?: "registry" | "workspace";
+  };
   /** When omitted, platform sync sections will not be printed */
   syncResult?: PlatformSyncResult;
   /** When syncResult is omitted, optionally print a hint line */
@@ -20,17 +28,23 @@ export function printPlatformSyncSummary({
   packageContext,
   version,
   packageFiles,
+  displayFiles,
   syncResult,
   noSyncHint
 }: PrintPlatformSyncSummaryOptions): void {
   const name = packageContext.config.name;
   const type = packageContext.location === 'root' ? 'root package' : 'package';
 
-  console.log(`✓ ${actionLabel} ${name}@${version} (${type}, ${packageFiles.length} files):`);
+  const filesToPrint = displayFiles?.paths ?? packageFiles.map(f => f.path);
+  const kind = displayFiles?.kind ?? 'registry';
 
-  if (packageFiles.length > 0) {
-    for (const path of [...packageFiles.map(f => f.path)].sort()) {
-      console.log(`   ├── ${formatRegistryPathForDisplay(path)}`);
+  console.log(`✓ ${actionLabel} ${name}@${version} (${type}, ${filesToPrint.length} files):`);
+
+  if (filesToPrint.length > 0) {
+    for (const path of [...filesToPrint].sort()) {
+      const displayPath =
+        kind === 'workspace' ? path : formatRegistryPathForDisplay(path);
+      console.log(`   ├── ${displayPath}`);
     }
   }
 

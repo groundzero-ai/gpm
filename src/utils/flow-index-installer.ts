@@ -6,6 +6,7 @@
  */
 
 import { dirname, join, sep } from 'path';
+import { promises as fs } from 'fs';
 import {
   installPackageWithFlows,
   type FlowInstallContext
@@ -20,6 +21,7 @@ import {
   readWorkspaceIndex,
   writeWorkspaceIndex
 } from './workspace-index-yml.js';
+import { exists } from './fs.js';
 import type { Platform } from '../core/platforms.js';
 import type { InstallOptions } from '../types/index.js';
 import type { WorkspaceIndexFileMapping } from '../types/workspace-index.js';
@@ -92,6 +94,61 @@ export async function installPackageByIndexWithFlows(
   const allConflicts: string[] = [];
   const allErrors: string[] = [];
   const fileMapping: Record<string, (string | WorkspaceIndexFileMapping)[]> = {};
+  
+  // Helper to normalize source keys: merge variants that refer to the same file
+  // This handles cases where .mcp.json and mcp.jsonc are discovered separately but refer to the same file
+  const sourceKeyCache = new Map<string, string>(); // Maps discovered source -> canonical key
+  const normalizeSourceKey = async (source: string): Promise<string> => {
+    // Check cache first
+    if (sourceKeyCache.has(source)) {
+      return sourceKeyCache.get(source)!;
+    }
+    
+    const sourceAbs = join(resolvedContentRoot, source);
+    if (!await exists(sourceAbs)) {
+      sourceKeyCache.set(source, source);
+      return source;
+    }
+    
+    // Check if any already-seen source key refers to the same file
+    // When both .mcp.json and mcp.jsonc exist and refer to the same file, prefer .mcp.json
+    // (since apply command uses .mcp.json, it's the canonical form)
+    let canonicalKey = source;
+    for (const [cachedSource, cachedCanonical] of sourceKeyCache.entries()) {
+      if (cachedSource === source) continue;
+      const cachedAbs = join(resolvedContentRoot, cachedSource);
+      if (await exists(cachedAbs)) {
+        try {
+          const sourceStat = await fs.stat(sourceAbs);
+          const cachedStat = await fs.stat(cachedAbs);
+          // Same file if same inode (Unix) or same size+mtime
+          if (sourceStat.ino === cachedStat.ino || 
+              (sourceStat.size === cachedStat.size && 
+               Math.abs(sourceStat.mtimeMs - cachedStat.mtimeMs) < 1000)) {
+            // Prefer dot-prefixed variant (.mcp.json) as canonical key when both exist
+            // This matches apply command behavior
+            if (source.startsWith('.') && !cachedCanonical.startsWith('.')) {
+              canonicalKey = source;
+              // Update cached entry to use dot-prefixed variant
+              sourceKeyCache.set(cachedSource, source);
+            } else if (!source.startsWith('.') && cachedCanonical.startsWith('.')) {
+              canonicalKey = cachedCanonical;
+            } else {
+              canonicalKey = cachedCanonical;
+            }
+            sourceKeyCache.set(source, canonicalKey);
+            return canonicalKey;
+          }
+        } catch {
+          // If stat fails, treat as different files
+        }
+      }
+    }
+    
+    // No match found, use source as canonical key
+    sourceKeyCache.set(source, source);
+    return source;
+  };
 
   // Execute flows for each platform
   for (const platform of platforms) {
@@ -114,7 +171,14 @@ export async function installPackageByIndexWithFlows(
         allTargetPaths.add(absTarget);
       }
       for (const [source, targets] of Object.entries(result.fileMapping ?? {})) {
-        const existing = fileMapping[source] ?? [];
+        // Normalize source key to canonical form
+        const normalizedSource = await normalizeSourceKey(source);
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/f66bae36-2cc1-4c38-8529-d173654652f4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'flow-index-installer.ts:116',message:'aggregating fileMapping from platform',data:{source,normalizedSource,targets,platform,existingKeys:Object.keys(fileMapping)},timestamp:Date.now(),sessionId:'debug-session',runId:'install-postfix',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        const existing = fileMapping[normalizedSource] ?? [];
         // Merge while deduping by target path; prefer complex mapping over string.
         const byTarget = new Map<string, string | WorkspaceIndexFileMapping>();
         for (const m of existing) {
@@ -130,7 +194,7 @@ export async function installPackageByIndexWithFlows(
             byTarget.set(targetPath, m);
           }
         }
-        fileMapping[source] = Array.from(byTarget.values());
+        fileMapping[normalizedSource] = Array.from(byTarget.values());
       }
 
       // Aggregate statistics
@@ -186,6 +250,10 @@ export async function installPackageByIndexWithFlows(
 
   // Update workspace index if not dry-run
   if (!options.dryRun) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/f66bae36-2cc1-4c38-8529-d173654652f4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'flow-index-installer.ts:188',message:'final fileMapping before index update',data:{fileMappingKeys:Object.keys(fileMapping),fileMapping},timestamp:Date.now(),sessionId:'debug-session',runId:'install',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     await updateWorkspaceIndexForFlows(
       cwd,
       packageName,

@@ -10,8 +10,8 @@ import { exists } from './fs.js';
 /**
  * Extract packages from openpackage.yml configuration
  */
-export function extractPackagesFromConfig(config: PackageYml): Array<{ name: string; version?: string; path?: string; git?: string; ref?: string; isDev: boolean }> {
-  const packages: Array<{ name: string; version?: string; path?: string; git?: string; ref?: string; isDev: boolean }> = [];
+export function extractPackagesFromConfig(config: PackageYml): Array<{ name: string; version?: string; path?: string; git?: string; ref?: string; subdirectory?: string; isDev: boolean }> {
+  const packages: Array<{ name: string; version?: string; path?: string; git?: string; ref?: string; subdirectory?: string; isDev: boolean }> = [];
   
   const processSection = (section: 'packages' | 'dev-packages', isDev: boolean) => {
     const deps = config[section];
@@ -23,6 +23,7 @@ export function extractPackagesFromConfig(config: PackageYml): Array<{ name: str
           path: pkg.path,
           git: (pkg as any).git,
           ref: (pkg as any).ref,
+          subdirectory: (pkg as any).subdirectory,
           isDev
         });
       }

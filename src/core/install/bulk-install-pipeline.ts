@@ -27,6 +27,7 @@ interface BulkPackageEntry {
   path?: string;
   git?: string;
   ref?: string;
+  subdirectory?: string;
   isDev: boolean;
 }
 
@@ -100,7 +101,8 @@ export async function runBulkInstallPipeline(
   for (const pkg of packagesToInstall) {
     try {
       const label = pkg.path ? `${pkg.name} (from ${pkg.path})` : (pkg.version ? `${pkg.name}@${pkg.version}` : pkg.name);
-      const gitLabel = pkg.git ? `${pkg.name} (git:${pkg.git}${pkg.ref ? `#${pkg.ref}` : ''})` : label;
+      const subdirPart = pkg.subdirectory ? `&subdirectory=${pkg.subdirectory}` : '';
+      const gitLabel = pkg.git ? `${pkg.name} (git:${pkg.git}${pkg.ref ? `#${pkg.ref}` : ''}${subdirPart})` : label;
 
       const baseConflictDecisions = options.conflictDecisions
         ? { ...options.conflictDecisions }
@@ -117,18 +119,32 @@ export async function runBulkInstallPipeline(
       if (pkg.git) {
         console.log(`\n🔧 Installing ${pkg.isDev ? '[dev] ' : ''}${gitLabel}...`);
 
-        const { sourcePath } = await loadPackageFromGit({
+        const loadResult = await loadPackageFromGit({
           url: pkg.git,
-          ref: pkg.ref
+          ref: pkg.ref,
+          subdirectory: pkg.subdirectory
         });
+
+        // Check if this is a marketplace - marketplaces cannot be used as dependencies
+        if (loadResult.isMarketplace) {
+          const errorMsg = `Package '${pkg.name}' is declared as a git source in openpackage.yml, ` +
+            `but the repository is a Claude Code plugin marketplace. ` +
+            `Marketplaces cannot be used as dependencies via openpackage.yml. ` +
+            `Please specify a subdirectory to install an individual plugin.`;
+          totalSkipped++;
+          results.push({ name: pkg.name, success: false, error: errorMsg });
+          console.log(`❌ Failed to install ${pkg.name}: ${errorMsg}`);
+          continue;
+        }
 
         const result = await runPathInstallPipeline({
           ...installOptions,
-          sourcePath,
+          sourcePath: loadResult.sourcePath,
           sourceType: 'directory',
           targetDir,
           gitUrl: pkg.git,
-          gitRef: pkg.ref
+          gitRef: pkg.ref,
+          gitSubdirectory: pkg.subdirectory
         });
 
         if (result.success) {

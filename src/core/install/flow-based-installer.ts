@@ -180,26 +180,49 @@ async function discoverFlowSources(
     // Handle array patterns: check all patterns in the array, not just the first
     const patterns = Array.isArray(flow.from) ? flow.from : [flow.from];
     const allSourcePaths = new Set<string>();
+    const pathsByPattern = new Map<string, string[]>();
+    
+    // First, collect paths found by each pattern (exact matches only)
+    // Also check for dot-prefixed variants FIRST, before checking non-dot patterns
+    // This ensures we prefer .mcp.json over mcp.jsonc when both could match
+    const dotPrefixedPathsFound = new Set<string>();
+    const dotPrefixedBaseNames = new Set<string>(); // Track base names of dot-prefixed files found
     
     for (const pattern of patterns) {
       const sourcePattern = resolvePattern(pattern, context);
-      const sourcePaths = await matchPattern(sourcePattern, packageRoot);
-      for (const path of sourcePaths) {
-        allSourcePaths.add(path);
-      }
-    }
-    
-    // Also check for dot-prefixed variants (e.g., .mcp.json when looking for mcp.json)
-    // This handles cases where plugins use dot-prefixed filenames
-    for (const pattern of patterns) {
-      const sourcePattern = resolvePattern(pattern, context);
-      // Only check for dot-prefixed variants for root-level files (no slashes)
+      // Check for dot-prefixed variants first for root-level files
       if (!sourcePattern.includes('/') && !sourcePattern.startsWith('.')) {
         const dotPrefixedPattern = `.${sourcePattern}`;
         const dotPrefixedPaths = await matchPattern(dotPrefixedPattern, packageRoot);
         for (const path of dotPrefixedPaths) {
+          dotPrefixedPathsFound.add(path);
+          // Extract base name (without extension) for similarity matching
+          // e.g., .mcp.json -> mcp
+          const baseName = path.replace(/^\./, '').split('.')[0];
+          dotPrefixedBaseNames.add(baseName);
           allSourcePaths.add(path);
         }
+      }
+    }
+    
+    // Then check non-dot patterns, but skip if dot-prefixed variant was found with similar base name
+    // This prevents finding mcp.jsonc when .mcp.json exists (they're different files but similar names)
+    for (const pattern of patterns) {
+      const sourcePattern = resolvePattern(pattern, context);
+      // Skip non-dot pattern if a dot-prefixed file with similar base name was found
+      // e.g., if .mcp.json exists (base name "mcp"), skip mcp.jsonc (base name "mcp")
+      if (!sourcePattern.includes('/') && !sourcePattern.startsWith('.')) {
+        const patternBaseName = sourcePattern.split('.')[0];
+        if (dotPrefixedBaseNames.has(patternBaseName)) {
+          // Dot-prefixed variant with same base name exists, skip to avoid finding different file
+          continue;
+        }
+      }
+      
+      const sourcePaths = await matchPattern(sourcePattern, packageRoot);
+      pathsByPattern.set(pattern, sourcePaths);
+      for (const path of sourcePaths) {
+        allSourcePaths.add(path);
       }
     }
     
@@ -533,6 +556,12 @@ export async function installPackageWithFlows(
     
     // Discover source files for each flow
     const flowSources = await discoverFlowSources(flows, packageRoot, flowContext);
+    
+    // #region agent log
+    for (const [flow, sources] of flowSources) {
+      fetch('http://127.0.0.1:7243/ingest/f66bae36-2cc1-4c38-8529-d173654652f4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'flow-based-installer.ts:535',message:'discovered flow sources',data:{flowFrom:flow.from,sources,platform},timestamp:Date.now(),sessionId:'debug-session',runId:'install',hypothesisId:'B'})}).catch(()=>{});
+    }
+    // #endregion
 
     // Build a map of base paths to platforms that have override files
     // This allows universal files to exclude platforms that have platform-specific overrides
@@ -654,21 +683,64 @@ export async function installPackageWithFlows(
             if (typeof target === 'string') {
               result.targetPaths.push(target);
               const targetRelFromWorkspace = relative(workspaceRoot, target);
-              if (!result.fileMapping[sourceRel]) result.fileMapping[sourceRel] = [];
-
               const normalizedTargetRel = targetRelFromWorkspace.replace(/\\/g, '/');
+              
+              // Normalize sourceRel to canonical form to avoid duplicate keys
+              // If sourceRel is a dot-prefixed variant (e.g., .mcp.json) discovered via dot-prefix check,
+              // but the flow pattern array includes other patterns, prefer a pattern that matches an actual file
+              let canonicalSourceRel = sourceRel;
+              if (sourceRel.startsWith('.') && !sourceRel.includes('/') && Array.isArray(flow.from)) {
+                const patterns = flow.from;
+                const sourceAbs = join(packageRoot, sourceRel);
+                // Check each pattern to see if it matches an actual file
+                for (const pattern of patterns) {
+                  const resolvedPattern = resolvePattern(pattern, sourceContext);
+                  // Skip dot-prefixed patterns and the current sourceRel
+                  if (resolvedPattern.startsWith('.') || resolvedPattern === sourceRel) {
+                    continue;
+                  }
+                  const patternAbs = join(packageRoot, resolvedPattern);
+                  if (await exists(patternAbs)) {
+                    // Check if they're the same file (same inode or same content)
+                    try {
+                      const statSource = await fs.stat(sourceAbs);
+                      const statPattern = await fs.stat(patternAbs);
+                      // Same file if same inode (Unix) or same size+mtime
+                      if (statSource.ino === statPattern.ino || 
+                          (statSource.size === statPattern.size && 
+                           Math.abs(statSource.mtimeMs - statPattern.mtimeMs) < 1000)) {
+                        canonicalSourceRel = resolvedPattern;
+                        break;
+                      }
+                    } catch {
+                      // If stat fails, check if sourceRel was found via dot-prefix check
+                      // In that case, prefer the explicit pattern
+                      if (!await exists(sourceAbs) && await exists(patternAbs)) {
+                        canonicalSourceRel = resolvedPattern;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // #region agent log
+              fetch('http://127.0.0.1:7243/ingest/f66bae36-2cc1-4c38-8529-d173654652f4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'flow-based-installer.ts:657',message:'fileMapping key assignment',data:{sourceRel,canonicalSourceRel,sourceRelForMapping,target:normalizedTargetRel,platform,flowFrom:flow.from},timestamp:Date.now(),sessionId:'debug-session',runId:'install-postfix',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+              
+              if (!result.fileMapping[canonicalSourceRel]) result.fileMapping[canonicalSourceRel] = [];
               const isKeyTrackedMerge =
                 (flowResult.merge === 'deep' || flowResult.merge === 'shallow') &&
                 Array.isArray(flowResult.keys);
 
               if (isKeyTrackedMerge) {
-                result.fileMapping[sourceRel].push({
+                result.fileMapping[canonicalSourceRel].push({
                   target: normalizedTargetRel,
                   merge: flowResult.merge,
                   keys: flowResult.keys
                 });
               } else {
-                result.fileMapping[sourceRel].push(normalizedTargetRel);
+                result.fileMapping[canonicalSourceRel].push(normalizedTargetRel);
               }
 
             }
