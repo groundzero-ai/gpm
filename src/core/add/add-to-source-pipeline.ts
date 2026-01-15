@@ -14,7 +14,8 @@ import type { PackageContext } from '../package-context.js';
 import { parsePackageYml } from '../../utils/package-yml.js';
 import { exists } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
-import { runApplyPipeline } from '../apply/apply-pipeline.js';
+import { buildApplyContext } from '../install/unified/context-builders.js';
+import { runUnifiedInstallPipeline } from '../install/unified/pipeline.js';
 
 export interface AddToSourceOptions {
   apply?: boolean;
@@ -89,8 +90,9 @@ export async function runAddToSourcePipeline(
       // Check if package is installed in current workspace
       await resolvePackageSource(cwd, packageName);
 
-      // Apply changes to workspace
-      const applyResult = await runApplyPipeline(source.packageName, {});
+      // Build apply context and run unified pipeline
+      const applyCtx = await buildApplyContext(cwd, source.packageName, {});
+      const applyResult = await runUnifiedInstallPipeline(applyCtx);
       
       if (!applyResult.success) {
         return {

@@ -2,10 +2,11 @@ import { join, basename } from 'path';
 import { readTextFile, exists } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
 import { ValidationError, UserCancellationError } from '../../utils/errors.js';
-import { runPathInstallPipeline, type PathInstallPipelineOptions } from './path-install-pipeline.js';
+import { buildPathInstallContext } from './unified/context-builders.js';
+import { runUnifiedInstallPipeline } from './unified/pipeline.js';
 import { detectPluginType, validatePluginManifest } from './plugin-detector.js';
 import { safePrompts } from '../../utils/prompts.js';
-import type { CommandResult } from '../../types/index.js';
+import type { CommandResult, InstallOptions } from '../../types/index.js';
 import { CLAUDE_PLUGIN_PATHS } from '../../constants/index.js';
 import { generatePluginName } from '../../utils/plugin-naming.js';
 
@@ -163,7 +164,7 @@ export async function installMarketplacePlugins(
   selectedNames: string[],
   gitUrl: string,
   gitRef: string | undefined,
-  options: Omit<PathInstallPipelineOptions, 'sourcePath' | 'sourceType' | 'targetDir' | 'gitUrl' | 'gitRef' | 'gitSubdirectory'>
+  options: InstallOptions
 ): Promise<CommandResult> {
   logger.info('Installing marketplace plugins', { 
     marketplace: marketplace.name,
@@ -255,15 +256,19 @@ export async function installMarketplacePlugins(
     console.log(`\n📦 Installing plugin: ${scopedName}...`);
     
     try {
-      const pipelineResult = await runPathInstallPipeline({
-        ...options,
-        sourcePath: pluginDir,
-        sourceType: 'directory',
-        targetDir: '.',
+      // Build git context with subdirectory to properly track git source
+      const { buildGitInstallContext } = await import('./unified/context-builders.js');
+      const ctx = await buildGitInstallContext(
+        process.cwd(),
         gitUrl,
-        gitRef,
-        gitSubdirectory: pluginSubdir
-      });
+        {
+          ...options,
+          gitRef,
+          gitSubdirectory: pluginSubdir
+        }
+      );
+
+      const pipelineResult = await runUnifiedInstallPipeline(ctx);
 
       if (!pipelineResult.success) {
         results.push({

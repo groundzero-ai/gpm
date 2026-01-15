@@ -6,7 +6,7 @@
 import { getDetectedPlatforms } from '../platforms.js';
 import { logger } from '../../utils/logger.js';
 import type { PackageFile, InstallOptions } from '../../types/index.js';
-import { syncRootFiles, type RootFileSyncResult } from './root-files-sync.js';
+import { installOrSyncRootFiles, type RootFileOperationResult } from '../install/operations/root-files.js';
 import { applyPlannedSyncForPackageFiles } from '../../utils/index-based-installer.js';
 import type { PackageIndexLocation } from '../../utils/package-index-yml.js';
 
@@ -54,9 +54,9 @@ export async function performPlatformSync(
     packageLocation
   );
 
-  const rootSyncResult: RootFileSyncResult = skipRootSync
+  const rootSyncResult: RootFileOperationResult = skipRootSync
     ? { created: [], updated: [], skipped: [] }
-    : await syncRootFiles(cwd, packageFiles, packageName, detectedPlatforms);
+    : await installOrSyncRootFiles(cwd, packageName, packageFiles, detectedPlatforms);
 
   return {
     created: [...plannerOutcome.operation.installedFiles, ...rootSyncResult.created],

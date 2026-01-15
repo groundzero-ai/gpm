@@ -1,5 +1,4 @@
 import { dirname, join, relative, parse as parsePath, sep } from 'path';
-import path from 'path';
 import { promises as fs } from 'fs';
 
 import {
@@ -21,9 +20,9 @@ import {
 } from '../constants/index.js';
 import { getPlatformRootFileNames, stripRootCopyPrefix } from './platform-root-files.js';
 import type { Platform } from '../core/platforms.js';
-import { getAllUniversalSubdirs, platformUsesFlows } from '../core/platforms.js';
+import { getAllUniversalSubdirs } from '../core/platforms.js';
 import { normalizePathForProcessing } from './path-normalization.js';
-import { formatPathForWorkspaceIndex } from './path-resolution.js';
+import { formatPathForYaml } from './path-resolution.js';
 import {
   isAllowedRegistryPath,
   isRootRegistryPath,
@@ -50,16 +49,12 @@ import {
   writeWorkspaceIndex
 } from './workspace-index-yml.js';
 import {
-  buildWorkspaceOwnershipContext,
   type WorkspaceConflictOwner
 } from './workspace-index-ownership.js';
 import { resolvePackageContentRoot } from '../core/install/local-source-resolution.js';
 import { calculateFileHash } from './hash-utils.js';
-import { installPackageWithFlows, type FlowInstallResult } from '../core/install/flow-based-installer.js';
 import { getTargetPath } from './workspace-index-helpers.js';
 import type { WorkspaceIndexFileMapping } from '../types/workspace-index.js';
-import { loadPackageFromPath } from '../core/install/path-package-loader.js';
-import { installPackageByIndexWithFlows } from './flow-index-installer.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -176,7 +171,7 @@ async function writePackageIndex(record: PackageIndexRecord, cwd?: string): Prom
 
   // Prefer workspace-relative paths when the source lives under the workspace root.
   // Otherwise, convert absolute paths under ~/.openpackage/ to tilde notation.
-  const pathToUse = formatPathForWorkspaceIndex(rawPath, resolvedCwd);
+  const pathToUse = formatPathForYaml(rawPath, resolvedCwd);
 
   wsRecord.index.packages[record.packageName] = {
     ...entry,
@@ -1098,68 +1093,7 @@ function buildIndexMappingFromPlans(plans: GroupPlan[]): Record<string, string[]
   return sortMapping(mapping);
 }
 
-// ============================================================================
-// Main Install Function
-// ============================================================================
 
-export async function installPackageByIndex(
-  cwd: string,
-  packageName: string,
-  version: string,
-  platforms: Platform[],
-  options: InstallOptions,
-  includePaths?: string[],
-  contentRoot?: string
-): Promise<IndexInstallResult> {
-  // Check if any platform uses flows
-  const hasFlowPlatforms = platforms.some(platform => platformUsesFlows(platform, cwd));
-  
-  if (hasFlowPlatforms) {
-    logger.debug(`Using flow-based installer for ${packageName} on platforms: ${platforms.join(', ')}`);
-    
-    // Load package to get format metadata (important for plugin conversion)
-    let packageFormat: any = undefined;
-    if (contentRoot) {
-      try {
-        const pkg = await loadPackageFromPath(contentRoot);
-        
-        // Extract format metadata if available (set by plugin transformer)
-        if (pkg._format) {
-          packageFormat = pkg._format;
-          logger.debug(`Package format detected from _format field`, { 
-            type: packageFormat.type, 
-            platform: packageFormat.platform 
-          });
-        }
-      } catch (error) {
-        // If we can't load the package for format detection, that's OK
-        // Format will be detected from files instead
-        logger.debug(`Could not load package for format detection: ${(error as Error).message}`);
-      }
-    }
-
-    // Delegate to flow-based installer
-    return await installPackageByIndexWithFlows(
-      cwd,
-      packageName,
-      version,
-      platforms,
-      options,
-      includePaths,
-      contentRoot,
-      packageFormat  // Pass format metadata
-    );
-  }
-  
-  // No platforms use flows - this should not happen with current config
-  throw new Error(
-    `Platform(s) ${platforms.join(', ')} do not use flows. ` +
-    `Flow-based installation is required. Please check platforms.jsonc configuration.`
-  );
-  
-  // Legacy subdirs-based code removed - now using flow-based installation exclusively
-  // See flow-index-installer.ts for the new implementation
-}
 
 
 

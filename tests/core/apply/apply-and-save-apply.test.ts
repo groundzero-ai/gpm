@@ -3,7 +3,8 @@ import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { runApplyPipeline } from '../../../src/core/apply/apply-pipeline.js';
+import { buildApplyContext } from '../../../src/core/install/unified/context-builders.js';
+import { runUnifiedInstallPipeline } from '../../../src/core/install/unified/pipeline.js';
 import { runSavePipeline } from '../../../src/core/save/save-pipeline.js';
 
 function assertHasData<T>(result: { success: boolean; data?: T; error?: string }): asserts result is { success: true; data: T } {
@@ -67,7 +68,8 @@ async function runApplyAndSaveApplyTests(): Promise<void> {
     assert.ok(saveWithApplyData.syncResult, 'save with --apply should include a sync result');
 
     // Standalone apply command behavior
-    const applyResult = await runApplyPipeline(undefined, { force: true });
+    const applyCtx = await buildApplyContext(tempDir, '', { force: true });
+    const applyResult = await runUnifiedInstallPipeline(applyCtx);
     assertHasData(applyResult);
     assert.ok(applyResult.data.syncResult, 'apply pipeline should return sync results');
 

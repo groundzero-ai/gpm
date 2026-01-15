@@ -1,7 +1,6 @@
 import type { InstallOptions, CommandResult } from '../../types/index.js';
 import type { ResolvedPackage } from '../dependency-resolver.js';
 import { CONFLICT_RESOLUTION } from '../../constants/index.js';
-import { installWorkspaceFiles } from '../../utils/install-orchestrator.js';
 
 /**
  * Handle dry run mode for package installation
@@ -24,7 +23,7 @@ export async function handleDryRunMode(
     console.log('');
   }
 
-  // Show what would be installed to ai
+  // Show what would be installed
   for (const resolved of resolvedPackages) {
     if (resolved.conflictResolution === CONFLICT_RESOLUTION.SKIPPED) {
       console.log(`✓ Would skip ${resolved.name}@${resolved.version} (user would decline overwrite)`);
@@ -36,18 +35,7 @@ export async function handleDryRunMode(
       continue;
     }
 
-    const dryRunResult = await installWorkspaceFiles(resolved.name, targetDir, options, resolved.version, true);
-
-    if (dryRunResult.skipped) {
-      console.log(`✓ Would skip ${resolved.name}@${resolved.version} (same or newer version already installed)`);
-      continue;
-    }
-
-    console.log(`✓ Would install to ai${targetDir !== '.' ? '/' + targetDir : ''}: ${dryRunResult.installedCount} files`);
-
-    if (dryRunResult.overwritten) {
-      console.log(`  ⚠️  Would overwrite existing directory`);
-    }
+    console.log(`✓ Would install ${resolved.name}@${resolved.version} to workspace`);
   }
 
   // Show openpackage.yml update

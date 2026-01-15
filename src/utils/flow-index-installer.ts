@@ -14,7 +14,7 @@ import {
 import { resolvePackageContentRoot } from '../core/install/local-source-resolution.js';
 import { getRegistryDirectories } from '../core/directory.js';
 import { logger } from './logger.js';
-import { formatPathForWorkspaceIndex } from './path-resolution.js';
+import { formatPathForYaml } from './path-resolution.js';
 import { sortMapping } from './package-index-yml.js';
 import {
   getWorkspaceIndexPath,
@@ -289,7 +289,7 @@ async function updateWorkspaceIndexForFlows(
     }
     
     // Convert to workspace-relative path if under workspace, then apply tilde notation for global paths
-    const formattedPath = formatPathForWorkspaceIndex(packagePath, cwd);
+    const formattedPath = formatPathForYaml(packagePath, cwd);
     
     // Update package entry
     wsRecord.index.packages[packageName] = {
@@ -354,7 +354,7 @@ async function writePackageIndex(
   }
   
   // Convert to workspace-relative path if under workspace, then apply tilde notation for global paths
-  const pathToUse = formatPathForWorkspaceIndex(rawPath, cwd);
+  const pathToUse = formatPathForYaml(rawPath, cwd);
   
   wsRecord.index.packages[record.packageName] = {
     ...entry,

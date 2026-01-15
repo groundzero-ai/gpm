@@ -1,14 +1,14 @@
 import { join } from 'path';
-import { InstallOptions } from '../types/index.js';
-import { ResolvedPackage } from '../core/dependency-resolver.js';
-import { checkExistingPackageInMarkdownFiles } from '../core/openpackage.js';
-import { parsePackageYml } from './package-yml.js';
-import { exists } from './fs.js';
-import { logger } from './logger.js';
-import { getLocalPackageDir } from './paths.js';
-import { FILE_PATTERNS } from '../constants/index.js';
-import { getVersionInfoFromDependencyTree } from './install-helpers.js';
-import { promptPackageOverwrite } from './prompts.js';
+import { InstallOptions } from '../../../types/index.js';
+import { ResolvedPackage } from '../../dependency-resolver.js';
+import { checkExistingPackageInMarkdownFiles } from '../../openpackage.js';
+import { parsePackageYml } from '../../../utils/package-yml.js';
+import { exists } from '../../../utils/fs.js';
+import { logger } from '../../../utils/logger.js';
+import { getLocalPackageDir } from '../../../utils/paths.js';
+import { FILE_PATTERNS } from '../../../constants/index.js';
+import { getVersionInfoFromDependencyTree } from '../../../utils/install-helpers.js';
+import { promptPackageOverwrite } from '../../../utils/prompts.js';
 
 /**
  * Get currently installed version from .openpackage/packages/<package>/openpackage.yml

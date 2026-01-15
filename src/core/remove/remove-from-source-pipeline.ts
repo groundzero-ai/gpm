@@ -10,7 +10,8 @@ import { confirmRemoval } from './removal-confirmation.js';
 import { exists, remove } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
 import { UserCancellationError } from '../../utils/errors.js';
-import { runApplyPipeline } from '../apply/apply-pipeline.js';
+import { buildApplyContext } from '../install/unified/context-builders.js';
+import { runUnifiedInstallPipeline } from '../install/unified/pipeline.js';
 
 export interface RemoveFromSourceOptions {
   apply?: boolean;
@@ -150,8 +151,9 @@ export async function runRemoveFromSourcePipeline(
       // Check if package is installed in current workspace
       await resolvePackageSource(cwd, packageName);
 
-      // Apply changes to workspace
-      const applyResult = await runApplyPipeline(source.packageName, {});
+      // Build apply context and run unified pipeline
+      const applyCtx = await buildApplyContext(cwd, source.packageName, {});
+      const applyResult = await runUnifiedInstallPipeline(applyCtx);
       
       if (!applyResult.success) {
         return {

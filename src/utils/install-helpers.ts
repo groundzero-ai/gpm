@@ -1,7 +1,6 @@
 import * as semver from 'semver';
 import { PackageYml } from '../types/index.js';
-import { resolveDependencies, ResolvedPackage } from '../core/dependency-resolver.js';
-import { gatherRootVersionConstraints } from '../core/openpackage.js';
+import { ResolvedPackage } from '../core/dependency-resolver.js';
 import { arePackageNamesEquivalent } from './package-name.js';
 import { getLocalPackageYmlPath } from './paths.js';
 import { parsePackageYml } from './package-yml.js';
@@ -36,62 +35,7 @@ export function extractPackagesFromConfig(config: PackageYml): Array<{ name: str
   return packages;
 }
 
-/**
- * Re-resolve dependencies with version overrides to ensure correct child dependencies
- */
-export async function resolveDependenciesWithOverrides(
-  packageName: string,
-  targetDir: string,
-  skippedPackages: string[],
-  globalConstraints?: Map<string, string[]>,
-  version?: string
-): Promise<{ resolvedPackages: ResolvedPackage[]; missingPackages: string[] }> {
-  // Re-gather root constraints (which now includes any newly persisted versions)
-  const rootConstraints = await gatherRootVersionConstraints(targetDir);
-  
-  // Filter out skipped packages by creating a wrapper
-  const customResolveDependencies = async (
-    name: string,
-    dir: string,
-    isRoot: boolean = true,
-    visitedStack: Set<string> = new Set(),
-    resolvedPackages: Map<string, ResolvedPackage> = new Map(),
-    ver?: string,
-    requiredVersions: Map<string, string[]> = new Map(),
-    globalConst?: Map<string, string[]>,
-    rootOver?: Map<string, string[]>
-  ): Promise<{ resolvedPackages: ResolvedPackage[]; missingPackages: string[] }> => {
-    // Skip if this package is in the skipped list
-    if (skippedPackages.includes(name)) {
-      return { resolvedPackages: Array.from(resolvedPackages.values()), missingPackages: [] };
-    }
 
-    return await resolveDependencies(
-      name,
-      dir,
-      isRoot,
-      visitedStack,
-      resolvedPackages,
-      ver,
-      requiredVersions,
-      globalConst,
-      rootOver
-    );
-  };
-  
-  // Re-resolve the entire dependency tree with updated root constraints
-  return await customResolveDependencies(
-    packageName,
-    targetDir,
-    true,
-    new Set(),
-    new Map(),
-    version,
-    new Map(),
-    globalConstraints,
-    rootConstraints
-  );
-}
 
 /**
  * Get the highest version and required version of a package from the dependency tree

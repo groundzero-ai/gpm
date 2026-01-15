@@ -1,27 +1,19 @@
 import { Command } from 'commander';
-import { resolve } from 'path';
-
 import type { CommandResult, InstallOptions } from '../types/index.js';
-import { formatPathForDisplay } from '../utils/formatters.js';
-import { DIR_PATTERNS, PACKAGE_PATHS } from '../constants/index.js';
-import { runBulkInstallPipeline } from '../core/install/bulk-install-pipeline.js';
-import { runInstallPipeline, determineResolutionMode } from '../core/install/install-pipeline.js';
-import { runPathInstallPipeline } from '../core/install/path-install-pipeline.js';
-import { loadPackageFromGit } from '../core/install/git-package-loader.js';
-import { inferSourceType } from '../core/install/path-package-loader.js';
-import { detectPluginType } from '../core/install/plugin-detector.js';
-import { 
-  parseMarketplace, 
-  promptPluginSelection, 
-  installMarketplacePlugins 
-} from '../core/install/marketplace-handler.js';
-import { withErrorHandling, ValidationError } from '../utils/errors.js';
+import { withErrorHandling } from '../utils/errors.js';
 import { normalizePlatforms } from '../utils/platform-mapper.js';
-import { classifyPackageInput } from '../utils/package-input.js';
-import { findExistingPathOrGitSource } from '../utils/install-helpers.js';
-import { logger } from '../utils/logger.js';
+import { buildInstallContext } from '../core/install/unified/context-builders.js';
+import { runUnifiedInstallPipeline } from '../core/install/unified/pipeline.js';
+import { determineResolutionMode } from '../utils/resolution-mode.js';
+import { DIR_PATTERNS, PACKAGE_PATHS } from '../constants/index.js';
 import { normalizePathForProcessing } from '../utils/path-normalization.js';
+import type { InstallationContext } from '../core/install/unified/context.js';
+import type { LoadedPackage } from '../core/install/sources/base.js';
+import { getLoaderForSource } from '../core/install/sources/loader-factory.js';
 
+/**
+ * Validate that target directory is not inside .openpackage metadata
+ */
 function assertTargetDirOutsideMetadata(targetDir: string): void {
   const normalized = normalizePathForProcessing(targetDir ?? '.');
   if (!normalized || normalized === '.') {
@@ -33,251 +25,196 @@ function assertTargetDirOutsideMetadata(targetDir: string): void {
     normalized.startsWith(`${DIR_PATTERNS.OPENPACKAGE}/`)
   ) {
     throw new Error(
-      `Installation target '${targetDir}' cannot point inside ${DIR_PATTERNS.OPENPACKAGE} (reserved for metadata like ${PACKAGE_PATHS.INDEX_RELATIVE}). Choose a workspace path outside metadata.`
+      `Installation target '${targetDir}' cannot point inside ${DIR_PATTERNS.OPENPACKAGE} ` +
+      `(reserved for metadata like ${PACKAGE_PATHS.INDEX_RELATIVE}). ` +
+      `Choose a workspace path outside metadata.`
     );
   }
 }
 
+/**
+ * Validate resolution flags
+ */
 export function validateResolutionFlags(options: InstallOptions & { local?: boolean; remote?: boolean }): void {
   if (options.remote && options.local) {
     throw new Error('--remote and --local cannot be used together. Choose one resolution mode.');
   }
 }
 
+/**
+ * Main install command handler
+ */
 async function installCommand(
   packageInput: string | undefined,
   options: InstallOptions
 ): Promise<CommandResult> {
-  const targetDir = '.';
   const cwd = process.cwd();
+  const targetDir = '.';
+  
+  // Validate inputs
   assertTargetDirOutsideMetadata(targetDir);
+  validateResolutionFlags(options);
+  
+  // Set resolution mode
   options.resolutionMode = determineResolutionMode(options);
-  logger.debug('Install resolution mode selected', { mode: options.resolutionMode });
-
-  if (!packageInput) {
-    return await runBulkInstallPipeline(options);
-  }
-
-  // Classify the input to determine if it's a registry name, directory, or tarball
-  const classification = await classifyPackageInput(packageInput, cwd);
   
-  // For registry-type inputs (package names), check if it's actually a path/git dependency in openpackage.yml
-  // This ensures we respect the manifest's declared source type on subsequent installs
-  if (classification.type === 'registry' && classification.name) {
-    const existingSource = await findExistingPathOrGitSource(cwd, classification.name);
-    
-    if (existingSource) {
-      if (existingSource.type === 'git') {
-        const subdirPart = existingSource.subdirectory ? `&subdirectory=${existingSource.subdirectory}` : '';
-        logger.info(`Using git source from openpackage.yml for '${classification.name}': ${existingSource.url}`);
-        console.log(`✓ Using git source from openpackage.yml: ${existingSource.url}${existingSource.ref ? `#${existingSource.ref}` : ''}${subdirPart}`);
-        
-        const result = await loadPackageFromGit({
-          url: existingSource.url,
-          ref: existingSource.ref,
-          subdirectory: existingSource.subdirectory
-        });
-        
-        if (result.isMarketplace) {
-          throw new ValidationError(
-            `Package '${classification.name}' is declared as a git source in openpackage.yml, ` +
-            `but the repository is a Claude Code plugin marketplace. ` +
-            `Marketplaces cannot be used as dependencies via openpackage.yml.`
-          );
-        }
-        
-        return await runPathInstallPipeline({
-          ...options,
-          sourcePath: result.sourcePath,
-          sourceType: 'directory',
-          targetDir,
-          gitUrl: existingSource.url,
-          gitRef: existingSource.ref,
-          gitSubdirectory: existingSource.subdirectory
-        });
-      } else if (existingSource.type === 'path') {
-        logger.info(`Using path source from openpackage.yml for '${classification.name}': ${existingSource.path}`);
-        const displayPath = formatPathForDisplay(existingSource.path, cwd);
-        console.log(`✓ Using path source from openpackage.yml: ${displayPath}`);
-        
-        const resolvedPath = resolve(cwd, existingSource.path);
-        const sourceType = inferSourceType(existingSource.path);
-        return await runPathInstallPipeline({
-          ...options,
-          sourcePath: resolvedPath,
-          sourceType,
-          targetDir
-        });
-      }
-    }
+  // Build context(s)
+  const contexts = await buildInstallContext(cwd, packageInput, options);
+  
+  // Handle bulk install (multiple contexts)
+  if (Array.isArray(contexts)) {
+    return await runBulkInstall(contexts);
   }
   
-  if (classification.type === 'git') {
-    const result = await loadPackageFromGit({
-      url: classification.gitUrl!,
-      ref: classification.gitRef,
-      subdirectory: classification.gitSubdirectory
-    });
+  // For git sources, we need to load the package first to detect if it's a marketplace
+  // Marketplaces are detected during loadPackagePhase, so we need to check after loading
+  if (contexts.source.type === 'git') {
+    // Load package to detect marketplace
+    const loader = getLoaderForSource(contexts.source);
+    const loaded = await loader.load(contexts.source, options);
     
-    // Check if this is a marketplace
-    if (result.isMarketplace) {
-      logger.info('Detected Claude Code marketplace, prompting for plugin selection', { 
-        url: classification.gitUrl 
-      });
-      
-      const pluginDetection = await detectPluginType(result.sourcePath);
-      if (!pluginDetection.manifestPath) {
-        throw new ValidationError('Marketplace manifest not found');
-      }
-      
-      // Parse marketplace and prompt for selection (pass context for fallback naming)
-      const marketplace = await parseMarketplace(pluginDetection.manifestPath, {
-        gitUrl: classification.gitUrl,
-        repoPath: result.repoPath
-      });
-      const selectedPlugins = await promptPluginSelection(marketplace);
-      
-      if (selectedPlugins.length === 0) {
-        console.log('No plugins selected. Installation cancelled.');
-        return { success: true };
-      }
-      
-      // Install selected plugins
-      return await installMarketplacePlugins(
-        result.repoPath,
-        marketplace,
-        selectedPlugins,
-        classification.gitUrl!,
-        classification.gitRef,
-        options
-      );
+    // Update context with loaded info
+    contexts.source.packageName = loaded.packageName;
+    contexts.source.version = loaded.version;
+    contexts.source.contentRoot = loaded.contentRoot;
+    contexts.source.pluginMetadata = loaded.pluginMetadata;
+    
+    // Check if marketplace - handle at command level
+    if (contexts.source.pluginMetadata?.pluginType === 'marketplace') {
+      return await handleMarketplaceInstallation(contexts, options, cwd);
     }
     
-    // Not a marketplace, install as regular package/plugin
-    return await runPathInstallPipeline({
-      ...options,
-      sourcePath: result.sourcePath,
-      sourceType: 'directory',
-      targetDir,
-      gitUrl: classification.gitUrl,
-      gitRef: classification.gitRef,
-      gitSubdirectory: classification.gitSubdirectory
-    });
-  }
-
-  if (classification.type === 'directory' || classification.type === 'tarball') {
-    // Display source comparison info if available
-    if (classification.sourceComparisonInfo) {
-      displayPackageSourceResolution(classification.sourceComparisonInfo);
-    }
-    
-    // Check if this is a marketplace (only for directories, not tarballs)
-    if (classification.type === 'directory') {
-      const pluginDetection = await detectPluginType(classification.resolvedPath!);
-      if (pluginDetection.isPlugin && pluginDetection.type === 'marketplace') {
-        logger.info('Detected Claude Code marketplace from local path, prompting for plugin selection', { 
-          path: classification.resolvedPath 
-        });
-        
-        // Parse marketplace and prompt for selection (pass context for fallback naming)
-        const marketplace = await parseMarketplace(pluginDetection.manifestPath!, {
-          repoPath: classification.resolvedPath
-        });
-        const selectedPlugins = await promptPluginSelection(marketplace);
-        
-        if (selectedPlugins.length === 0) {
-          console.log('No plugins selected. Installation cancelled.');
-          return { success: true };
-        }
-        
-        // Install selected plugins (no git URL for local paths)
-        return await installMarketplacePlugins(
-          classification.resolvedPath!,
-          marketplace,
-          selectedPlugins,
-          classification.resolvedPath!, // Use path as "url" for tracking
-          undefined, // No git ref for local paths
-          options
-        );
-      }
-    }
-    
-    return await runPathInstallPipeline({
-      ...options,
-      sourcePath: classification.resolvedPath!,
-      sourceType: classification.type,
-      targetDir
-    });
+    // Not a marketplace, continue with normal pipeline
+    // Create resolved package for the loaded package
+    contexts.resolvedPackages = [{
+      name: loaded.packageName,
+      version: loaded.version,
+      pkg: { metadata: loaded.metadata, files: [], _format: undefined },
+      isRoot: true,
+      source: 'git',
+      contentRoot: loaded.contentRoot
+    }];
   }
   
-  // Registry-based install (existing flow)
-  const { name, version, registryPath } = classification;
-  return await runInstallPipeline({
-    ...options,
-    packageName: name!,
-    version,
-    registryPath,
-    targetDir
-  });
+  // Single package install
+  return await runUnifiedInstallPipeline(contexts);
 }
 
 /**
- * Display user-friendly information about package source resolution
+ * Handle marketplace installation with plugin selection
  */
-function displayPackageSourceResolution(info: any): void {
-  const { candidates, selected, reason } = info;
+async function handleMarketplaceInstallation(
+  context: InstallationContext,
+  options: InstallOptions,
+  cwd: string
+): Promise<CommandResult> {
+  const {
+    parseMarketplace,
+    promptPluginSelection,
+    installMarketplacePlugins
+  } = await import('../core/install/marketplace-handler.js');
+  const { getLoaderForSource } = await import('../core/install/sources/loader-factory.js');
   
-  // Workspace override - simple message
-  if (reason === 'workspace-override') {
-    console.log(`✓ Found ${selected.packageName} in workspace packages`);
-    console.log(`💡 Workspace packages always override global/registry`);
-    return;
+  // Load the marketplace package
+  const loader = getLoaderForSource(context.source);
+  const loaded: LoadedPackage = await loader.load(context.source, options);
+  
+  if (!loaded.pluginMetadata?.manifestPath) {
+    throw new Error('Marketplace manifest not found');
   }
   
-  // Single source - simple message
-  if (reason === 'only-source' && candidates.length === 1) {
-    const sourceType = selected.type === 'global' ? 'global packages' : 
-                       selected.type === 'registry' ? 'registry' : 'workspace packages';
-    console.log(`✓ Found ${selected.packageName} in ${sourceType}`);
-    return;
+  // Parse marketplace manifest
+  const marketplace = await parseMarketplace(loaded.pluginMetadata.manifestPath, {
+    repoPath: loaded.contentRoot
+  });
+  
+  // Prompt user to select plugins
+  const selectedPlugins = await promptPluginSelection(marketplace);
+  
+  if (selectedPlugins.length === 0) {
+    console.log('No plugins selected. Installation cancelled.');
+    return { success: true, data: { installed: 0, skipped: 0 } };
   }
   
-  // Multiple sources - show comparison
-  if (candidates.length > 1) {
-    console.log(`Resolving ${selected.packageName}...`);
-    for (const candidate of candidates) {
-      const label = candidate.type === 'global' ? 'Global packages' : 'Registry';
-      const suffix = candidate.type === 'global' ? ' (mutable)' : ' (stable)';
-      console.log(`  • ${label}: ${candidate.version}${suffix}`);
-    }
-    
-    const sourceLabel = selected.type === 'global' ? 'global packages' : 'registry';
-    
-    if (reason === 'newer-version') {
-      console.log(`✓ Using ${selected.packageName}@${selected.version} from ${sourceLabel} (newer version)`);
-      
-      // Warn about outdated global if registry was selected
-      if (selected.type === 'registry') {
-        const global = candidates.find((c: any) => c.type === 'global');
-        if (global) {
-          console.log(`⚠️  Global packages has older version (${global.version})`);
-          console.log(`💡 To update global: cd ~/.openpackage/packages/${selected.packageName} && opkg pack`);
-        }
-      }
-    } else if (reason === 'same-version-prefer-mutable') {
-      console.log(`✓ Using ${selected.packageName}@${selected.version} from ${sourceLabel} (same version, prefer mutable)`);
-    } else {
-      console.log(`✓ Using ${selected.packageName}@${selected.version} from ${sourceLabel}`);
-    }
+  // Install selected plugins using marketplace handler
+  // At this point we know it's a git source with a gitUrl
+  if (context.source.type !== 'git' || !context.source.gitUrl) {
+    throw new Error('Marketplace must be from a git source');
   }
+  
+  return await installMarketplacePlugins(
+    loaded.contentRoot,
+    marketplace,
+    selectedPlugins,
+    context.source.gitUrl,
+    context.source.gitRef,
+    options
+  );
 }
 
+/**
+ * Run bulk installation for multiple packages
+ */
+async function runBulkInstall(contexts: InstallationContext[]): Promise<CommandResult> {
+  if (contexts.length === 0) {
+    console.log('⚠️ No packages found in openpackage.yml');
+    console.log('\nTips:');
+    console.log('• Add packages to the "packages" array in openpackage.yml');
+    console.log('• Add development packages to the "dev-packages" array');
+    console.log('• Use "opkg install <package-name>" to install a specific package');
+    return { success: true, data: { installed: 0, skipped: 0 } };
+  }
+  
+  console.log(`✓ Installing ${contexts.length} packages from openpackage.yml\n`);
+  
+  let totalInstalled = 0;
+  let totalSkipped = 0;
+  const results: Array<{ name: string; success: boolean; error?: string }> = [];
+  
+  for (const ctx of contexts) {
+    try {
+      const result = await runUnifiedInstallPipeline(ctx);
+      
+      if (result.success) {
+        totalInstalled++;
+        results.push({ name: ctx.source.packageName, success: true });
+        console.log(`✓ Successfully installed ${ctx.source.packageName}`);
+      } else {
+        totalSkipped++;
+        results.push({ name: ctx.source.packageName, success: false, error: result.error });
+        console.log(`❌ Failed to install ${ctx.source.packageName}: ${result.error}`);
+      }
+    } catch (error) {
+      totalSkipped++;
+      results.push({ name: ctx.source.packageName, success: false, error: String(error) });
+      console.log(`❌ Failed to install ${ctx.source.packageName}: ${error}`);
+    }
+  }
+  
+  // Display summary
+  console.log(`\n✓ Installation complete: ${totalInstalled} installed, ${totalSkipped} failed`);
+  
+  const allSuccessful = totalSkipped === 0;
+  return {
+    success: allSuccessful,
+    data: { installed: totalInstalled, skipped: totalSkipped, results },
+    error: allSuccessful ? undefined : `${totalSkipped} packages failed to install`
+  };
+}
+
+/**
+ * Setup install command
+ */
 export function setupInstallCommand(program: Command): void {
   program
     .command('install')
     .alias('i')
     .description('Install packages to workspace')
-    .argument('[package-name]', 'name of the package to install (optional - installs all from openpackage.yml if not specified). Supports package@version syntax.')
+    .argument(
+      '[package-name]',
+      'name of the package to install (optional - installs all from openpackage.yml if not specified). ' +
+      'Supports package@version syntax.'
+    )
     .option('--dry-run', 'preview changes without applying them')
     .option('--force', 'overwrite existing files')
     .option('--conflicts <strategy>', 'conflict handling strategy: keep-both, overwrite, skip, or ask')
@@ -288,29 +225,34 @@ export function setupInstallCommand(program: Command): void {
     .option('--profile <profile>', 'profile to use for authentication')
     .option('--api-key <key>', 'API key for authentication (overrides profile)')
     .action(withErrorHandling(async (packageName: string | undefined, options: InstallOptions) => {
+      // Normalize platforms
       options.platforms = normalizePlatforms(options.platforms);
 
+      // Normalize conflict strategy
       const commandOptions = options as InstallOptions & { conflicts?: string };
       const rawConflictStrategy = commandOptions.conflicts ?? options.conflictStrategy;
       if (rawConflictStrategy) {
         const normalizedStrategy = (rawConflictStrategy as string).toLowerCase();
-        const allowedStrategies: InstallOptions['conflictStrategy'][] = ['keep-both', 'overwrite', 'skip', 'ask'];
+        const allowedStrategies: InstallOptions['conflictStrategy'][] = [
+          'keep-both', 'overwrite', 'skip', 'ask'
+        ];
         if (!allowedStrategies.includes(normalizedStrategy as InstallOptions['conflictStrategy'])) {
-          throw new Error(`Invalid --conflicts value '${rawConflictStrategy}'. Use one of: keep-both, overwrite, skip, ask.`);
+          throw new Error(
+            `Invalid --conflicts value '${rawConflictStrategy}'. ` +
+            `Use one of: keep-both, overwrite, skip, ask.`
+          );
         }
         options.conflictStrategy = normalizedStrategy as InstallOptions['conflictStrategy'];
       }
 
-      validateResolutionFlags(options);
-      options.resolutionMode = determineResolutionMode(options);
-
+      // Execute install
       const result = await installCommand(packageName, options);
+      
       if (!result.success) {
         if (result.error === 'Package not found') {
-          return;
+          return; // Already displayed message
         }
         throw new Error(result.error || 'Installation operation failed');
       }
     }));
 }
-

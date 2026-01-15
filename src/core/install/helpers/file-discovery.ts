@@ -1,9 +1,9 @@
-import { packageManager } from '../core/package.js';
-import { FILE_PATTERNS, PACKAGE_PATHS } from '../constants/index.js';
-import type { PackageFile } from '../types/index.js';
-import { getPlatformDefinition, type Platform } from '../core/platforms.js';
-import { buildNormalizedIncludeSet, isManifestPath, normalizePackagePath } from './manifest-paths.js';
-import { getPlatformRootFileNames, stripRootCopyPrefix, isRootCopyPath } from './platform-root-files.js';
+import { packageManager } from '../../package.js';
+import { FILE_PATTERNS, PACKAGE_PATHS } from '../../../constants/index.js';
+import type { PackageFile } from '../../../types/index.js';
+import { getPlatformDefinition, type Platform } from '../../platforms.js';
+import { buildNormalizedIncludeSet, isManifestPath, normalizePackagePath } from '../../../utils/manifest-paths.js';
+import { getPlatformRootFileNames, stripRootCopyPrefix, isRootCopyPath } from '../../../utils/platform-root-files.js';
 
 export interface CategorizedInstallFiles {
   pathBasedFiles: PackageFile[];

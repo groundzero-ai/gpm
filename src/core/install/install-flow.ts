@@ -10,9 +10,9 @@ import { logger } from '../../utils/logger.js';
 import { VersionConflictError, UserCancellationError } from '../../utils/errors.js';
 import { normalizePlatforms } from '../../utils/platform-mapper.js';
 import { createWorkspacePackageYml } from '../../utils/package-management.js';
-import { checkAndHandleAllPackageConflicts } from '../../utils/install-conflict-handler.js';
-import { discoverAndCategorizeFiles } from '../../utils/install-file-discovery.js';
-import { installRootFilesFromMap } from '../../utils/root-file-installer.js';
+import { checkAndHandleAllPackageConflicts } from './operations/conflict-handler.js';
+import { discoverAndCategorizeFiles } from './helpers/file-discovery.js';
+import { installOrSyncRootFiles } from './operations/root-files.js';
 import { installPackageByIndexWithFlows as installPackageByIndex, type IndexInstallResult } from '../../utils/flow-index-installer.js';
 import { promptVersionSelection } from '../../utils/prompts.js';
 import { ensureDir, exists, writeTextFile } from '../../utils/fs.js';
@@ -258,14 +258,14 @@ export async function performIndexBasedInstallationPhases(params: InstallationPh
         filtersForPackage,
         resolved.contentRoot  // Pass contentRoot for path-based packages
       );
-      const installResult = await installRootFilesFromMap(
+      const installResult = await installOrSyncRootFiles(
         cwd,
         resolved.name,
         categorized.rootFiles,
         platforms
       );
 
-      installResult.installed.forEach(file => rootFileResults.installed.add(file));
+      installResult.created.forEach(file => rootFileResults.installed.add(file));
       installResult.updated.forEach(file => rootFileResults.updated.add(file));
       installResult.skipped.forEach(file => rootFileResults.skipped.add(file));
 
