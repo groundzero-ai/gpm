@@ -154,31 +154,15 @@ export class PlatformConverter {
         sourcePlatform,
         flowCount: allImportFlows.length
       });
-      
-      // For plugins: files are already in universal structure, just need content transformation
-      // Import flows already have correct paths (workspace → package)
-      // Adjust for plugins where workspace files are in universal locations
-      const adjustedFlows = allImportFlows.map(flow => {
-        // Import flows have 'from' as workspace path and 'to' as package path
-        // For plugins, workspace paths may need adjustment
-        const platformPrefix = `.${sourcePlatform}/`;
-        
-        // Handle both string and array 'from' patterns
-        const fromPatterns = Array.isArray(flow.from) ? flow.from : [flow.from];
-        const adjustedFromPatterns = fromPatterns.map(fromPattern => {
-          if (fromPattern.startsWith(platformPrefix)) {
-            return fromPattern.substring(platformPrefix.length);
-          }
-          return fromPattern;
-        });
-        
-        // Return adjusted flow
-        if (Array.isArray(flow.from)) {
-          return { ...flow, from: adjustedFromPatterns };
-        } else {
-          return { ...flow, from: adjustedFromPatterns[0] };
-        }
-      });
+
+      // IMPORTANT:
+      // These "import" flows are defined to read platform-specific paths (e.g. ".claude-plugin/plugin.json")
+      // from the source package and write universal outputs (e.g. "openpackage.yml").
+      //
+      // We should NOT strip the platform prefix here. Doing so turns ".claude-plugin/plugin.json" into
+      // "plugin.json", which will not exist in a real Claude plugin repository and makes the
+      // platform-to-universal stage a no-op (causing infinite re-detection/re-conversion loops).
+      const adjustedFlows = allImportFlows;
       
       stages.push({
         name: 'platform-to-universal',
@@ -307,12 +291,14 @@ export class PlatformConverter {
     }
     
     // Check each file against the patterns
-    for await (const filePath of walkFiles(baseDir)) {
+      for await (const filePath of walkFiles(baseDir)) {
       const relativePath = relative(baseDir, filePath);
       
       // Check if file matches any pattern (with priority - first match wins for arrays)
       for (const p of patterns) {
-        if (minimatch(relativePath, p, { dot: false })) {
+        // IMPORTANT: conversion must match dotfiles like ".claude-plugin/plugin.json".
+        // If dotfiles don't match, platform-to-universal stages can become no-ops and loop forever.
+        if (minimatch(relativePath, p, { dot: true })) {
           matches.push(filePath);
           break; // Only match once per file
         }
@@ -340,10 +326,14 @@ export class PlatformConverter {
       const executor = createFlowExecutor();
       const convertedFiles: PackageFile[] = [];
       let filesProcessed = 0;
+      const matchedSources = new Set<string>();
       
-      // Create a temporary package root with source files
-      const packageRoot = join(tempDir, 'source');
+      // Create isolated input/output roots for this stage
+      const stageRoot = join(tempDir, stage.name);
+      const packageRoot = join(stageRoot, 'in');
+      const outputRoot = join(stageRoot, 'out');
       await ensureDir(packageRoot);
+      await ensureDir(outputRoot);
       
       // Write package files to temp directory
       for (const file of pkg.files) {
@@ -354,7 +344,7 @@ export class PlatformConverter {
       
       // Build flow context
       const context: FlowContext = {
-        workspaceRoot: tempDir,  // Use temp dir as workspace
+        workspaceRoot: outputRoot,  // Write outputs away from inputs
         packageRoot,
         platform: 'claude' as Platform,  // Temporary platform for conversion context
         packageName: pkg.metadata.name,
@@ -391,6 +381,7 @@ export class PlatformConverter {
         // Execute flow for each matching file
         for (const sourceFile of matchingFiles) {
           const sourceRelative = relative(packageRoot, sourceFile);
+          matchedSources.add(sourceRelative);
           
           // Create concrete flow with specific file path
           const concreteFlow: Flow = {
@@ -412,7 +403,7 @@ export class PlatformConverter {
           
           // Collect transformed files
           if (typeof flowResult.target === 'string') {
-            const targetPath = relative(tempDir, flowResult.target);
+            const targetPath = relative(outputRoot, flowResult.target);
             
             // Read transformed file content
             try {
@@ -432,7 +423,7 @@ export class PlatformConverter {
           }
         }
       }
-      
+
       return {
         success: true,
         filesProcessed,

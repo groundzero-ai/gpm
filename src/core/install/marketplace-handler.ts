@@ -2,7 +2,7 @@ import { join, basename } from 'path';
 import { readTextFile, exists } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
 import { ValidationError, UserCancellationError } from '../../utils/errors.js';
-import { buildPathInstallContext } from './unified/context-builders.js';
+import { buildGitInstallContext, buildPathInstallContext } from './unified/context-builders.js';
 import { runUnifiedInstallPipeline } from './unified/pipeline.js';
 import { detectPluginType, validatePluginManifest } from './plugin-detector.js';
 import { safePrompts } from '../../utils/prompts.js';
@@ -257,7 +257,6 @@ export async function installMarketplacePlugins(
     
     try {
       // Build git context with subdirectory to properly track git source
-      const { buildGitInstallContext } = await import('./unified/context-builders.js');
       const ctx = await buildGitInstallContext(
         process.cwd(),
         gitUrl,

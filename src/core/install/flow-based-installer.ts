@@ -1463,9 +1463,7 @@ async function installWithConversion(
       // This will apply the target platform flows to the now-universal-format content
       const convertedInstallContext: FlowInstallContext = {
         ...installContext,
-        packageRoot: tempPackageRoot,
-        // Important: Clear packageFormat so it gets re-detected as universal format
-        packageFormat: undefined
+        packageRoot: tempPackageRoot
       };
       
       // Recursively call installPackageWithFlows, but with converted package root

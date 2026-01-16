@@ -90,6 +90,22 @@
         "to": ".claude-plugin/plugin.json"
       },
       {
+        "from": "rules/**/*.md",
+        "to": "rules/**/*.md"
+      },
+      {
+        "from": "commands/**/*.md",
+        "to": "commands/**/*.md"
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": "agents/**/*.md"
+      },
+      {
+        "from": "skills/**/*",
+        "to": "skills/**/*"
+      },
+      {
         "from": "mcp.jsonc",
         "to": ".mcp.json"
       }
@@ -98,6 +114,22 @@
       {
         "from": ".claude-plugin/plugin.json",
         "to": "openpackage.yml"
+      },
+      {
+        "from": "rules/**/*.md",
+        "to": "rules/**/*.md"
+      },
+      {
+        "from": "commands/**/*.md",
+        "to": "commands/**/*.md"
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": "agents/**/*.md"
+      },
+      {
+        "from": "skills/**/*",
+        "to": "skills/**/*"
       },
       {
         "from": ".mcp.json",
