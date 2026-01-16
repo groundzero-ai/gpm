@@ -4,7 +4,7 @@
 
 ## Active Tasks
 
-_No active tasks - epic complete_
+- 🆕 [Task: Support Pi-Mono](task-8838ec6c-support-pi-mono.md) - GitHub Issue #13
 
 ## Backlog
 

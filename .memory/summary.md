@@ -18,7 +18,14 @@ OpenPackage (`opkg`) is a universal package manager for AI coding tools. It enab
 
 ## Current Status
 
-✅ **Epic Complete: Codebase Exploration & Analysis**
+🔄 **New Task Added from GitHub**
+
+### Active Tasks
+
+- 🆕 **[Support Pi-Mono](task-8838ec6c-support-pi-mono.md)** (GitHub Issue #13)
+  - Add support for Pi-Mono platform integration
+  - Status: Ready to start
+  - Source: https://github.com/enulus/OpenPackage/issues/13
 
 ### Recent Completions
 
@@ -53,7 +60,7 @@ OpenPackage (`opkg`) is a universal package manager for AI coding tools. It enab
 
 ## Active Epic
 
-_None - codebase exploration complete_
+_None - awaiting direction on Pi-Mono task_
 
 ## Active Phases
 
@@ -61,8 +68,9 @@ _None_
 
 ## Next Steps
 
-1. Await user direction for next development task
-2. Available research documents for reference:
+1. Review Pi-Mono task requirements
+2. Decide on approach for implementation
+3. Available research documents for reference:
    - [Codebase Analysis](research-b603792d-codebase-analysis.md)
    - [Data Flow Diagrams](research-886fcfc8-data-flow-diagram.md)
    - [User Journeys](research-dc9cb7d9-user-journeys.md)
