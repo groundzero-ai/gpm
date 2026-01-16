@@ -40,18 +40,6 @@ export interface PackageFormat {
    * Detailed file analysis for debugging
    */
   analysis: FormatAnalysis;
-  
-  /**
-   * Special flag: if true, content is already in native format for the target platform
-   * (e.g., Claude plugin with Claude-format frontmatter)
-   * This means: copy files with path mapping but skip content transformations
-   */
-  isNativeFormat?: boolean;
-  
-  /**
-   * If isNativeFormat is true, which platform's format?
-   */
-  nativePlatform?: Platform;
 }
 
 export interface FormatAnalysis {
@@ -123,9 +111,7 @@ export function detectPackageFormat(files: PackageFile[]): PackageFormat {
           universal: [],
           platformSpecific: ['.claude-plugin/plugin.json']
         }
-      },
-      isNativeFormat: true,
-      nativePlatform: 'claude'
+      }
     };
   }
   
@@ -326,40 +312,4 @@ export function needsConversion(
   }
   
   return false;
-}
-
-/**
- * Check if package should install with path mapping only (no content transformations)
- * This applies to native format packages where the content is already correct for the
- * target platform, but file paths need to be mapped (e.g., commands/ → .claude/commands/)
- */
-export function shouldUsePathMappingOnly(
-  format: PackageFormat,
-  targetPlatform: Platform
-): boolean {
-  // Native format for target platform: apply path mappings but skip content transforms
-  return (
-    format.isNativeFormat === true &&
-    format.nativePlatform === targetPlatform
-  );
-}
-
-/**
- * Check if package should install AS-IS (no transformations at all)
- * This is currently unused but kept for potential future use cases where
- * both structure AND content match exactly
- * 
- * @deprecated Use shouldUsePathMappingOnly instead for most cases
- */
-export function shouldInstallDirectly(
-  format: PackageFormat,
-  targetPlatform: Platform
-): boolean {
-  // Platform-specific format matching target platform, but NOT native format
-  // (native format needs path mapping)
-  return (
-    format.type === 'platform-specific' &&
-    format.platform === targetPlatform &&
-    !format.isNativeFormat
-  );
 }

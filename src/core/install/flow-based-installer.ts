@@ -101,8 +101,6 @@ export async function installPackageWithFlows(
       type: packageFormat.type,
       platform: packageFormat.platform,
       confidence: packageFormat.confidence,
-      isNativeFormat: packageFormat.isNativeFormat,
-      nativePlatform: packageFormat.nativePlatform,
       targetPlatform: platform,
       source: installContext.packageFormat ? 'provided' : 'detected'
     });

@@ -6,30 +6,17 @@
 
 import type { InstallOptions } from '../../../types/index.js';
 import type { FlowInstallContext, InstallationStrategy } from './types.js';
-import { DirectInstallStrategy } from './direct-install-strategy.js';
-import { PathMappingInstallStrategy } from './path-mapping-strategy.js';
 import { ConversionInstallStrategy } from './conversion-strategy.js';
 import { FlowBasedInstallStrategy } from './flow-based-strategy.js';
+import { needsConversion } from '../format-detector.js';
 import { logger } from '../../../utils/logger.js';
-
-/**
- * Strategy registry in precedence order
- */
-const STRATEGY_REGISTRY: Array<new () => InstallationStrategy> = [
-  DirectInstallStrategy,
-  PathMappingInstallStrategy,
-  ConversionInstallStrategy,
-  FlowBasedInstallStrategy  // Default fallback
-];
 
 /**
  * Select the appropriate installation strategy based on package format and platform
  * 
- * Strategy selection precedence:
- * 1. DirectInstallStrategy - Exact match, no transformations needed
- * 2. PathMappingInstallStrategy - Native format, path mapping only
- * 3. ConversionInstallStrategy - Cross-platform conversion required
- * 4. FlowBasedInstallStrategy - Universal format, full flow transformations
+ * Strategy selection:
+ * 1. ConversionInstallStrategy - Cross-platform conversion required (source ≠ target)
+ * 2. FlowBasedInstallStrategy - Default for all other cases (universal or same-platform)
  * 
  * @param context - Installation context with package metadata
  * @param options - Installation options
@@ -51,29 +38,23 @@ export function selectInstallStrategy(
     return new FlowBasedInstallStrategy();
   }
   
-  // Try each strategy in precedence order
-  for (const StrategyClass of STRATEGY_REGISTRY) {
-    const strategy = new StrategyClass();
-    
-    if (strategy.canHandle(format, platform)) {
-      logger.debug(`Selected installation strategy: ${strategy.name}`, {
-        package: context.packageName,
-        platform,
-        formatType: format.type,
-        formatPlatform: format.platform,
-        isNativeFormat: format.isNativeFormat,
-        nativePlatform: format.nativePlatform
-      });
-      
-      return strategy;
-    }
+  // Check if conversion is needed
+  if (needsConversion(format, platform)) {
+    logger.debug('Selected installation strategy: conversion', {
+      package: context.packageName,
+      platform,
+      formatType: format.type,
+      formatPlatform: format.platform
+    });
+    return new ConversionInstallStrategy();
   }
   
-  // Fallback to flow-based (should never reach here due to registry design)
-  logger.warn('No strategy matched, falling back to flow-based strategy', {
+  // Default: flow-based strategy
+  logger.debug('Selected installation strategy: flow-based', {
     package: context.packageName,
     platform,
-    formatType: format.type
+    formatType: format.type,
+    formatPlatform: format.platform
   });
   
   return new FlowBasedInstallStrategy();

@@ -26,26 +26,3 @@ export function getApplicableFlows(platform: Platform, cwd: string): Flow[] {
   
   return flows;
 }
-
-/**
- * Strip content transformations from flows (for path-mapping-only strategies)
- * Preserves flow structure and merge behavior, but removes transform operations
- */
-export function stripContentTransformations(flows: Flow[]): Flow[] {
-  return flows.map(flow => {
-    const strippedFlow: Flow = {
-      from: flow.from,
-      to: flow.to
-    };
-    
-    if (flow.merge) {
-      strippedFlow.merge = flow.merge;
-    }
-    
-    if (flow.when) {
-      strippedFlow.when = flow.when;
-    }
-    
-    return strippedFlow;
-  });
-}

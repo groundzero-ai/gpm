@@ -140,24 +140,10 @@ export async function transformPluginToPackage(
   // Collect all plugin files (preserve entire directory structure)
   const files = await extractPluginFiles(pluginDir);
   
-  // Detect package format for conversion hints
+  // Detect package format
+  // Claude plugins are detected as platform-specific 'claude-plugin' format
+  // and will use the claude-plugin flows defined in platforms.jsonc
   const format = detectPackageFormat(files);
-  
-  // Claude plugins have universal structure but Claude-specific content (frontmatter)
-  // Mark as native Claude format: needs path mapping but no content transformation
-  // - isNativeFormat: true = content is already in target format (skip map/pipe transforms)
-  // - nativePlatform: 'claude' = this content is designed for Claude platform
-  // - platform: 'claude-plugin' = source format is Claude plugin
-  // - sourcePlatform: 'claude-plugin' = for $$source variable in flow conditions
-  // 
-  // Installation behavior:
-  // - Installing to claude: Use path mappings only (commands/ → .claude/commands/)
-  // - Installing to other platforms: Full conversion (claude → universal → target)
-  format.type = 'platform-specific';
-  format.platform = 'claude-plugin';
-  format.sourcePlatform = 'claude-plugin';
-  format.isNativeFormat = true;
-  format.nativePlatform = 'claude';
   
   const pkg: Package = {
     metadata,

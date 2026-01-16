@@ -22,8 +22,6 @@ export type {
 } from './types.js';
 
 // Strategy implementations (exported for testing/advanced usage)
-export { DirectInstallStrategy } from './direct-install-strategy.js';
-export { PathMappingInstallStrategy } from './path-mapping-strategy.js';
 export { ConversionInstallStrategy } from './conversion-strategy.js';
 export { FlowBasedInstallStrategy } from './flow-based-strategy.js';
 

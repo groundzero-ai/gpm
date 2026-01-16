@@ -15,7 +15,6 @@ import type { PackageFormat } from '../install/format-detector.js';
 import { 
   detectPackageFormat, 
   isPlatformSpecific,
-  shouldInstallDirectly,
   needsConversion 
 } from '../install/format-detector.js';
 import { getPlatformDefinition, getGlobalImportFlows } from '../platforms.js';
