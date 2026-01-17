@@ -65,7 +65,9 @@ export abstract class BaseStrategy implements InstallationStrategy {
         rootDir: deriveRootDirFromFlows(platformDef),
         // Context variables for conditional flows
         platform: context.platform,
-        source: context.packageFormat?.sourcePlatform || 'openpackage'
+        source: context.packageFormat?.sourcePlatform || 'openpackage',
+        // Path variable for conditional installation behavior
+        targetRoot: context.workspaceRoot
       },
       dryRun: context.dryRun
     };

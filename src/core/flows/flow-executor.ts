@@ -49,6 +49,7 @@ import {
 import { extractAllKeys } from './flow-key-extractor.js';
 import { applyMapPipeline, createMapContext, validateMapPipeline } from './map-pipeline/index.js';
 import { SourcePatternResolver } from './source-resolver.js';
+import { smartEquals, smartNotEquals } from '../../utils/path-comparison.js';
 
 /**
  * Default flow executor implementation
@@ -911,12 +912,16 @@ export class DefaultFlowExecutor implements FlowExecutor {
 
     if (condition.$eq) {
       const [left, right] = condition.$eq;
-      return this.resolveValue(left, context) === this.resolveValue(right, context);
+      const leftVal = this.resolveValue(left, context);
+      const rightVal = this.resolveValue(right, context);
+      return smartEquals(leftVal, rightVal);
     }
 
     if (condition.$ne) {
       const [left, right] = condition.$ne;
-      return this.resolveValue(left, context) !== this.resolveValue(right, context);
+      const leftVal = this.resolveValue(left, context);
+      const rightVal = this.resolveValue(right, context);
+      return smartNotEquals(leftVal, rightVal);
     }
 
     if (condition.exists) {

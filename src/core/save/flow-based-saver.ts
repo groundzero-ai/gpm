@@ -234,7 +234,9 @@ async function executeReverseFlow(
       packageRoot: cwd, // Source for save (reads from workspace)
       platform: '', // Not needed for reverse flow
       packageName: basename(packageRoot),
-      variables: {},
+      variables: {
+        targetRoot: packageRoot  // For save, target is the package directory
+      },
       direction: 'save',
       dryRun: options.dryRun ?? false
     };

@@ -221,7 +221,8 @@ export async function installPackagesWithFlows(
       variables: {
         name: pkg.packageName,
         version: pkg.packageVersion,
-        priority: pkg.priority
+        priority: pkg.priority,
+        targetRoot: workspaceRoot
       },
       dryRun
     };

@@ -95,6 +95,34 @@ opkg uninstall --global shared-rules
 - Compatible with all other install/uninstall flags (`--platforms`, `--dry-run`, etc.)
 - `--cwd` is explicitly ignored when `--global` is present
 
+### Conditional Flows
+The `--global` flag enables conditional installation behavior through the `$$targetRoot` context variable in platform flows:
+
+**Platform Flow Example:**
+```jsonc
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".mcp.json",
+  "when": { "$ne": ["$$targetRoot", "~/"] }  // Install to .mcp.json when NOT global
+},
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".claude.json",
+  "when": { "$eq": ["$$targetRoot", "~/"] }  // Install to .claude.json when global
+}
+```
+
+**How it works:**
+- Normal install: `$$targetRoot` = workspace directory (e.g., `/Users/john/project`)
+- Global install: `$$targetRoot` = home directory (e.g., `/Users/john`)
+- Conditions use path-aware comparison with tilde expansion and glob support
+
+**Result:**
+- `opkg install plugin` → Files go to `.mcp.json` (workspace)
+- `opkg install -g plugin` → Files go to `.claude.json` (global)
+
+See [Flow Reference](./platforms/flow-reference.md) for details on `$$targetRoot` and conditional flows.
+
 ---
 
 ## Command Notes (selected)

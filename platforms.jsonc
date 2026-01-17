@@ -255,6 +255,17 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".mcp.json",
+        "when": {
+          "$ne": ["$$targetRoot", "~/"]
+        },
+        "merge": "deep"
+      },
+      {
+        "from": ["mcp.jsonc", "mcp.json"],
+        "to": ".claude.json",
+        "when": {
+          "$eq": ["$$targetRoot", "~/"]
+        },
         "merge": "deep"
       }
     ],
@@ -315,7 +326,17 @@
       },
       {
         "from": ".mcp.json",
-        "to": "mcp.jsonc"
+        "to": "mcp.jsonc",
+        "when": {
+          "$ne": ["$$targetRoot", "~/"]
+        }
+      },
+      {
+        "from": ".claude.json",
+        "to": "mcp.jsonc",
+        "when": {
+          "$eq": ["$$targetRoot", "~/"]
+        }
       }
     ]
   },

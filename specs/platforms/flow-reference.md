@@ -199,6 +199,7 @@ Set one or more field values with context variable support:
 - `$$ext` - File extension (including dot)
 - `$$platform` - Target platform being installed to (e.g., "claude", "cursor")
 - `$$source` - Source platform/format of the package (e.g., "claude-plugin", "openpackage")
+- `$$targetRoot` - Absolute path where files are being installed (e.g., `/Users/john/project` or `/Users/john` for global)
 
 #### Operation 2: `$rename` - Rename Fields
 
@@ -635,6 +636,55 @@ Executes only if source has `servers` key.
 
 Executes only if `env` field equals `"production"`.
 
+#### Variable equality ($eq)
+```jsonc
+{
+  "when": {
+    "$eq": ["$$platform", "claude"]
+  }
+}
+```
+
+Compare two values for equality. Supports context variables with `$$` prefix.
+
+**Path-aware comparison:**
+When either value looks like a filesystem path, automatic path comparison is used:
+- Tilde expansion (`~/` → home directory)
+- Path normalization
+- Glob pattern matching
+
+**Examples:**
+```jsonc
+// Check if installing to home directory
+{ "when": { "$eq": ["$$targetRoot", "~/"] } }
+
+// Check if installing to specific path
+{ "when": { "$eq": ["$$targetRoot", "/opt/config"] } }
+
+// Glob pattern matching
+{ "when": { "$eq": ["$$targetRoot", "/tmp/*"] } }
+
+// Platform check
+{ "when": { "$eq": ["$$platform", "claude"] } }
+```
+
+#### Variable inequality ($ne)
+```jsonc
+{
+  "when": {
+    "$ne": ["$$targetRoot", "~/"]
+  }
+}
+```
+
+Compare two values for inequality. Uses same path-aware logic as `$eq`.
+
+**Example:**
+```jsonc
+// Only execute if NOT installing to home directory
+{ "when": { "$ne": ["$$targetRoot", "~/"] } }
+```
+
 #### Composite AND
 ```jsonc
 {
@@ -648,6 +698,18 @@ Executes only if `env` field equals `"production"`.
 ```
 
 All conditions must be true.
+
+**Example with path check:**
+```jsonc
+{
+  "when": {
+    "and": [
+      { "$eq": ["$$platform", "claude"] },
+      { "$eq": ["$$targetRoot", "~/"] }
+    ]
+  }
+}
+```
 
 #### Composite OR
 ```jsonc
@@ -669,8 +731,11 @@ type Condition =
   | { platform: string }
   | { exists: string }
   | { key: string; equals?: any }
+  | { $eq: [string, string] }  // Variable equality with path awareness
+  | { $ne: [string, string] }  // Variable inequality with path awareness
   | { and: Condition[] }
   | { or: Condition[] }
+  | { not: Condition }
 ```
 
 ### `merge` (string)
@@ -1138,6 +1203,42 @@ skills/                            .claude/skills/
 - Renames nested theme key using map pipeline
 - Filters empty/null values using $pipe operation
 - Deep merges result
+
+### Example 9: Conditional Installation Based on Target Directory
+
+```jsonc
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".mcp.json",
+  "when": {
+    "$ne": ["$$targetRoot", "~/"]
+  },
+  "merge": "deep"
+},
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".claude.json",
+  "when": {
+    "$eq": ["$$targetRoot", "~/"]
+  },
+  "merge": "deep"
+}
+```
+
+**Behavior:**
+- First flow: Install to `.mcp.json` when NOT in home directory (workspace installation)
+- Second flow: Install to `.claude.json` when in home directory (global installation with `--global` flag)
+- Uses path-aware comparison with tilde expansion
+- Enables different configuration files based on installation scope
+
+**Usage:**
+```bash
+# Workspace installation → .mcp.json
+opkg install claude-mcp-plugin
+
+# Global installation → .claude.json  
+opkg install --global claude-mcp-plugin
+```
 
 ## Best Practices
 
