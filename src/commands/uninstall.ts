@@ -4,6 +4,7 @@ import { UninstallOptions } from '../types/index.js';
 import { withErrorHandling, ValidationError } from '../utils/errors.js';
 import { runUninstallPipeline } from '../core/uninstall/uninstall-pipeline.js';
 import { validatePackageName } from '../utils/package-name.js';
+import { formatPathForDisplay } from '../utils/formatters.js';
 
 async function uninstallPackageCommand(
   packageName: string,
@@ -16,10 +17,24 @@ async function uninstallPackageCommand(
   }
 
   console.log(`✓ Uninstalled ${packageName}`);
-  console.log(`✓ Removed files: ${result.data?.removedFiles.length ?? 0}`);
-  if (result.data?.rootFilesUpdated.length) {
-    console.log(`✓ Updated root files:`);
-    result.data.rootFilesUpdated.forEach(f => console.log(` - ${f}`));
+  
+  const removedFiles = result.data?.removedFiles ?? [];
+  const rootFilesUpdated = result.data?.rootFilesUpdated ?? [];
+  
+  if (removedFiles.length > 0) {
+    console.log(`✓ Removed files: ${removedFiles.length}`);
+    const sortedFiles = [...removedFiles].sort((a, b) => a.localeCompare(b));
+    for (const file of sortedFiles) {
+      console.log(`   ├── ${formatPathForDisplay(file)}`);
+    }
+  }
+  
+  if (rootFilesUpdated.length > 0) {
+    console.log(`✓ Updated root files: ${rootFilesUpdated.length}`);
+    const sortedFiles = [...rootFilesUpdated].sort((a, b) => a.localeCompare(b));
+    for (const file of sortedFiles) {
+      console.log(`   ├── ${formatPathForDisplay(file)} (updated)`);
+    }
   }
 }
 
