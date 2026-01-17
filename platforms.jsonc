@@ -125,7 +125,52 @@
       },
       {
         "from": "agents/**/*.md",
-        "to": "agents/**/*.md"
+        "to": "agents/**/*.md",
+        // No mapping when target platform is Claude (already in Claude format)
+        "when": {
+          "$eq": ["$$platform", "claude"]
+        }
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": "agents/**/*.md",
+        // Apply reverse transformations when target platform is NOT Claude
+        "when": {
+          "$ne": ["$$platform", "claude"]
+        },
+        "map": [
+          // Remove the name field added during export
+          { "$unset": "name" },
+          
+          // Reverse model transformation
+          {
+            "$pipeline": {
+              "field": "model",
+              "operations": [
+                // Step 1: Convert version hyphens back to dots
+                // claude-sonnet-4-20250514 → claude-sonnet-4.20250514
+                { "$replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } },
+                
+                // Step 2: Add anthropic/ prefix ONLY if:
+                //   - It starts with "claude-" (Claude model without prefix)
+                //   - NOT if it's "default"
+                //   - NOT if it already has "anthropic/"
+                { "$replace": { "pattern": "^(claude-.+)$", "with": "anthropic/$1" } }
+              ]
+            }
+          },
+          
+          // Reverse tools transformation: "bash, read" → { bash: true, read: true }
+          {
+            "$pipeline": {
+              "field": "tools",
+              "operations": [
+                { "$reduce": { "type": "split", "separator": ", " } },
+                { "$arrayToObject": { "value": true } }
+              ]
+            }
+          }
+        ]
       },
       {
         "from": "skills/**/*",
@@ -159,6 +204,18 @@
       {
         "from": "agents/**/*.md",
         "to": ".claude/agents/**/*.md",
+        // No mapping when source is Claude plugin (already in Claude format)
+        "when": {
+          "$eq": ["$$source", "claude-plugin"]
+        }
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": ".claude/agents/**/*.md",
+        // Apply transformations when source is NOT Claude plugin
+        "when": {
+          "$ne": ["$$source", "claude-plugin"]
+        },
         "map": [
           // Set name from context
           { "$set": { "name": "$$filename" } },

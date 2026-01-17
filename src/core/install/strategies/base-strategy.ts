@@ -62,7 +62,10 @@ export abstract class BaseStrategy implements InstallationStrategy {
         version: context.packageVersion,
         priority: context.priority,
         rootFile: platformDef.rootFile,
-        rootDir: deriveRootDirFromFlows(platformDef)
+        rootDir: deriveRootDirFromFlows(platformDef),
+        // Context variables for conditional flows
+        platform: context.platform,
+        source: context.packageFormat?.sourcePlatform || 'openpackage'
       },
       dryRun: context.dryRun
     };

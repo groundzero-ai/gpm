@@ -197,6 +197,8 @@ Set one or more field values with context variable support:
 - `$$dirname` - Parent directory name
 - `$$path` - Full relative path
 - `$$ext` - File extension (including dot)
+- `$$platform` - Target platform being installed to (e.g., "claude", "cursor")
+- `$$source` - Source platform/format of the package (e.g., "claude-plugin", "openpackage")
 
 #### Operation 2: `$rename` - Rename Fields
 
