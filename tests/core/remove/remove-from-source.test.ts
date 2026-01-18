@@ -362,14 +362,23 @@ async function testRemoveFailsWithEmptyDirectory(): Promise<void> {
 }
 
 // Run all tests
-await testRemoveFromWorkspacePackageWithoutIndex();
-await testRemoveFromGlobalPackageFromAnyDirectory();
-await testRemoveApplyRequiresInstallation();
-await testRemoveRejectsRegistryPackages();
-await testRemoveDirectoryRemovesAllFiles();
-await testRemoveDryRunShowsPreview();
-await testRemoveCleansUpEmptyDirectories();
-await testRemoveFailsWhenPathNotFound();
-await testRemoveFailsWithEmptyDirectory();
+async function runTests() {
+  try {
+    await testRemoveFromWorkspacePackageWithoutIndex();
+    await testRemoveFromGlobalPackageFromAnyDirectory();
+    await testRemoveApplyRequiresInstallation();
+    await testRemoveRejectsRegistryPackages();
+    await testRemoveDirectoryRemovesAllFiles();
+    await testRemoveDryRunShowsPreview();
+    await testRemoveCleansUpEmptyDirectories();
+    await testRemoveFailsWhenPathNotFound();
+    await testRemoveFailsWithEmptyDirectory();
 
-console.log('\n✓ All remove-from-source tests passed');
+    console.log('\n✓ All remove-from-source tests passed');
+  } catch (error) {
+    console.error('Test failed:', error);
+    process.exit(1);
+  }
+}
+
+runTests();

@@ -7,8 +7,8 @@ This file provides high-level semantics for core commands in the path-based mode
 | Command | Direction | Purpose | Mutable Source | Immutable Source |
 |---------|-----------|---------|----------------|------------------|
 | `new` | N/A | Create package manifest | N/A | N/A |
-| `add` | Filesystem → Source | Add new files (source-only) | ✅ | ❌ Error |
-| `remove` | Source → Deletion | Remove files from source (source-only) | ✅ | ❌ Error |
+| `add` | Filesystem → Source | Add new files (source-only, path-only for workspace root) | ✅ | ❌ Error |
+| `remove` | Source → Deletion | Remove files from source (source-only, path-only for workspace root) | ✅ | ❌ Error |
 | `save` | Workspace → Source | Sync edits back (requires install) | ✅ | ❌ Error |
 | `set` | N/A | Update manifest metadata | ✅ | ❌ Error |
 | `pack` | Source → Registry | Create immutable snapshot | ✅ | N/A |
@@ -49,16 +49,20 @@ Add new files from anywhere to mutable source (workspace or global packages).
 
 ### `remove`
 
-Remove files from mutable source.
+Remove files from mutable source or workspace root.
 
-- Preconditions: Mutable source; fails on registry.
-- Flow: Resolve source → Collect files → Confirm → Delete → Clean up empty dirs.
+- Preconditions: Mutable source or workspace root; fails on registry.
+- Flow: Resolve arguments → Resolve source → Collect files → Confirm → Delete → Clean up empty dirs.
+- **Argument modes**: 
+  - Two-arg: `opkg remove <pkg> <path>` (named package)
+  - One-arg: `opkg remove <path>` (workspace root)
 - **No index updates**: `remove` only modifies package source. To sync deletions to workspace, use `apply` or `--apply` flag.
 - Options: `--apply` (sync to workspace immediately; requires package to be installed in current workspace), `--force` (skip confirmation), `--dry-run` (preview).
 - Example:
-  - `opkg remove my-pkg commands/deprecated.md` (source-only)
+  - `opkg remove commands/deprecated.md` (workspace root, path-only)
+  - `opkg remove my-pkg commands/deprecated.md` (named package, source-only)
   - `opkg remove my-pkg rules/old/ --apply` (source + workspace sync)
-  - `opkg remove my-pkg commands/ --dry-run` (preview)
+  - `opkg remove commands/ --dry-run` (preview workspace root)
 - Works from any directory with any mutable package.
 - Opposite of `add` command.
 - See [Remove](remove/).
