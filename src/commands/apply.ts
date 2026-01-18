@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import type { CommandResult } from '../types/index.js';
+import type { InstallationContext } from '../core/install/unified/context.js';
 import { withErrorHandling } from '../utils/errors.js';
 import { buildApplyContext } from '../core/install/unified/context-builders.js';
 import { runUnifiedInstallPipeline } from '../core/install/unified/pipeline.js';
@@ -13,31 +14,22 @@ async function applyCommand(
 ): Promise<CommandResult> {
   const cwd = process.cwd();
   
-  // If no package specified, apply all
+  // Handle bulk apply when no package name specified
   if (!packageName) {
-    return await applyAllPackages(cwd, options);
+    const contexts = await buildApplyContext(cwd, undefined, options);
+    return await applyBulk(contexts);
   }
   
-  // Build context
-  const ctx = await buildApplyContext(cwd, packageName, options);
-  
   // Apply single package
+  const ctx = await buildApplyContext(cwd, packageName, options);
   return await runUnifiedInstallPipeline(ctx);
 }
 
 /**
- * Apply all packages in workspace
+ * Apply multiple packages (workspace root + all installed packages)
  */
-async function applyAllPackages(
-  cwd: string,
-  options: { force?: boolean; dryRun?: boolean }
-): Promise<CommandResult> {
-  const { readWorkspaceIndex } = await import('../utils/workspace-index-yml.js');
-  const { index } = await readWorkspaceIndex(cwd);
-  
-  const packageNames = Object.keys(index.packages ?? {}).sort();
-  
-  if (packageNames.length === 0) {
+async function applyBulk(contexts: InstallationContext[]): Promise<CommandResult> {
+  if (contexts.length === 0) {
     return {
       success: false,
       error:
@@ -46,10 +38,9 @@ async function applyAllPackages(
     };
   }
   
-  console.log(`✓ Applying ${packageNames.length} packages\n`);
+  console.log(`✓ Applying ${contexts.length} package${contexts.length === 1 ? '' : 's'}\n`);
   
-  for (const name of packageNames) {
-    const ctx = await buildApplyContext(cwd, name, options);
+  for (const ctx of contexts) {
     const result = await runUnifiedInstallPipeline(ctx);
     
     if (!result.success) {
@@ -69,7 +60,7 @@ export function setupApplyCommand(program: Command): void {
     .description('Apply/sync package across platforms')
     .argument(
       '[package-name]',
-      'package name to apply (defaults to current/root package)'
+      'package name to apply (optional - applies workspace-level files and all installed packages if not specified)'
     )
     .option('-f, --force', 'overwrite existing files without prompting')
     .option('--dry-run', 'plan apply without writing files')

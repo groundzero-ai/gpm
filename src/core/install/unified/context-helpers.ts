@@ -26,6 +26,13 @@ export function shouldResolveDependencies(ctx: InstallationContext): boolean {
   if (ctx.source.type === 'git' || ctx.source.type === 'path') {
     return false;
   }
+  // Workspace sources with contentRoot already set (workspace root install) are also
+  // fully specified and should not be resolved through the registry. These install
+  // workspace-level files from .openpackage/ and the package name in the manifest
+  // is just metadata, not a reference to a registry package.
+  if (ctx.source.type === 'workspace' && ctx.source.contentRoot) {
+    return false;
+  }
   return true;
 }
 

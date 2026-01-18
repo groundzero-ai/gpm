@@ -6,6 +6,7 @@ import { SourceLoadError } from './base.js';
 import { readWorkspaceIndex } from '../../../utils/workspace-index-yml.js';
 import { resolveDeclaredPath } from '../../../utils/path-resolution.js';
 import { parsePackageYml } from '../../../utils/package-yml.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * Loads packages from workspace index (for apply command)
@@ -25,6 +26,25 @@ export class WorkspaceSourceLoader implements PackageSourceLoader {
     }
     
     try {
+      // Check if contentRoot is already set (workspace root install case)
+      if (source.contentRoot) {
+        logger.debug(`Loading workspace root package from ${source.contentRoot}`);
+        
+        // Load package metadata from workspace root
+        const manifestPath = join(source.contentRoot, 'openpackage.yml');
+        const metadata = await parsePackageYml(manifestPath);
+        const version = source.version || metadata.version || '0.0.0';
+        
+        return {
+          metadata,
+          packageName: source.packageName,
+          version,
+          contentRoot: join(source.contentRoot, '/'),
+          source: 'workspace'
+        };
+      }
+      
+      // Standard workspace source loading (from index)
       // Read workspace index
       const { index } = await readWorkspaceIndex(cwd);
       const entry = index.packages?.[source.packageName];

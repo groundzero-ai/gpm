@@ -179,6 +179,14 @@ export async function addPackageToYml(
   }
   
   const config = await parsePackageYml(packageYmlPath);
+  
+  // Don't add the workspace package to its own manifest
+  // Check if the package name matches the workspace manifest name
+  const workspacePackageName = config.name;
+  if (workspacePackageName && arePackageNamesEquivalent(packageName, workspacePackageName)) {
+    logger.debug(`Skipping manifest update: package '${packageName}' is the workspace package itself`);
+    return;
+  }
   if (!config.packages) config.packages = [];
   if (!config[DEPENDENCY_ARRAYS.DEV_PACKAGES]) config[DEPENDENCY_ARRAYS.DEV_PACKAGES] = [];
 

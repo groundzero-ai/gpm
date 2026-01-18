@@ -16,6 +16,7 @@ const testFiles: string[] = [
   'tests/core/install/marketplace-parsing.test.ts',
   'tests/core/install/cli-modes.test.ts',
   'tests/core/install/install-selection.test.ts',
+  'tests/core/install/workspace-level-install.test.ts',
   
   // Core - Push
   'tests/core/push/stable-selection.test.ts',

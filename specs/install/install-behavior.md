@@ -171,7 +171,10 @@ packages:
 ## 1. Command shapes
 
 - **`opkg install`**
-  - **Meaning**: Materialize *all* dependencies declared in `openpackage.yml` into the workspace, at the **latest versions that satisfy their declared ranges**, using the **default local-first with remote-fallback policy** over local and remote registries (see §2 and `version-resolution.md`).
+  - **Meaning**: 
+    1. Install workspace-level files from `.openpackage/` directory (if present)
+    2. Materialize *all* dependencies declared in `openpackage.yml` into the workspace, at the **latest versions that satisfy their declared ranges**, using the **default local-first with remote-fallback policy** over local and remote registries (see §2 and `version-resolution.md`).
+  - **Workspace-level files**: Files in `.openpackage/commands/`, `.openpackage/rules/`, etc. are installed to platform directories (e.g., `.cursor/commands/`) using the workspace package name from `.openpackage/openpackage.yml`.
 
 - **`opkg install <name>`**
   - **Meaning**:
@@ -348,6 +351,78 @@ Other flags (`--dev`, `--remote`, `--platforms`, `--dry-run`, conflicts) keep th
   - This makes `opkg install` act as:
     - **“Hydrate my workspace to match `openpackage.yml`”** on first run.
     - **“Upgrade within my declared ranges”** on subsequent runs.
+
+### 4.1 Workspace-level install behavior
+
+When `opkg install` is run without package arguments:
+
+**Step 1: Install workspace-level files**
+
+If the `.openpackage/` directory contains installable content:
+- The workspace directory itself is treated as a package
+- Uses the `name` field from `.openpackage/openpackage.yml` (defaults to workspace directory name)
+- Files in universal subdirectories (`.openpackage/commands/`, `.openpackage/rules/`, etc.) are installed to detected platforms
+- Workspace package is recorded in `openpackage.index.yml` with `path: "./.openpackage"`
+- **Self-exclusion**: The workspace package name is automatically excluded from being added to its own `packages` array
+
+**Step 2: Install manifest dependencies**
+
+Then, all packages from `packages[]` and `dev-packages[]` are installed as normal.
+
+**Example:**
+
+Workspace structure:
+```
+myproject/
+├── .openpackage/
+│   ├── openpackage.yml          # name: myproject, version: 1.0.0
+│   ├── commands/
+│   │   └── cleanup.md
+│   └── rules/
+│       └── style.md
+├── openpackage.yml              # Same file, contains packages list
+```
+
+Running `opkg install`:
+```bash
+$ opkg install
+✓ Installing 2 packages from openpackage.yml
+
+✓ myproject (workspace)
+✓ Added files: 2
+   ├── .cursor/commands/cleanup.md
+   └── .cursor/rules/style.md
+
+✓ some-dependency@1.0.0
+✓ Added files: 5
+   ...
+
+✓ Installation complete: 2 installed
+```
+
+Result in `.openpackage/openpackage.index.yml`:
+```yaml
+packages:
+  myproject:
+    path: ./.openpackage
+    version: 1.0.0
+    files:
+      commands/cleanup.md:
+        - .cursor/commands/cleanup.md
+      rules/style.md:
+        - .cursor/rules/style.md
+  
+  some-dependency:
+    path: ~/.openpackage/packages/some-dependency
+    version: 1.0.0
+    files:
+      # ... other files
+```
+
+**Key behaviors:**
+- Workspace package name (`myproject`) is NOT added to `packages` array in `openpackage.yml`
+- Works seamlessly with existing platform detection and flow-based mapping
+- Both workspace and dependency installations are tracked in the index
 
 ---
 

@@ -50,7 +50,51 @@ Nested packages:
 
 ---
 
-#### 6. Error Reporting
+#### 6. Workspace-Level Apply
+
+When `opkg apply` is invoked without a package name argument:
+
+**Step 1: Apply workspace package** (if present in index)
+
+- Checks if the workspace package (from `.openpackage/openpackage.yml` name field) exists in `openpackage.index.yml`
+- If found, applies workspace files from `.openpackage/` directory to platform locations
+- Uses the same flow-based mapping as regular packages (universal subdirectories → platform directories)
+
+**Step 2: Apply all installed packages**
+
+- Iterates through all packages in `openpackage.index.yml` (excluding the workspace package if already applied)
+- Applies each package in sorted order by name
+- Stops on first failure to prevent incomplete state
+
+**Example:**
+
+Given workspace with:
+- `.openpackage/openpackage.yml` with `name: myproject`
+- `.openpackage/commands/cleanup.md`
+- Installed package `utils@1.0.0`
+
+Running `opkg apply`:
+```bash
+$ opkg apply
+✓ Applying 2 packages
+
+✓ myproject (workspace)
+✓ Updated files: 1
+   └── .cursor/commands/cleanup.md
+
+✓ utils@1.0.0
+✓ Updated files: 3
+   ...
+```
+
+**Behavior notes:**
+- Workspace package is distinguished by `path: "./.openpackage"` in the index
+- Execution order: workspace first, then alphabetically by package name
+- Each package's apply operation is independent (uses its own platform flows)
+
+---
+
+#### 7. Error Reporting
 
 Failures in apply are surfaced to the user as part of the command result, along with a summary of created/updated/removed paths.
 

@@ -1,11 +1,14 @@
+import { basename } from 'path';
 import type { InstallOptions } from '../../../types/index.js';
 import type { InstallationContext, PackageSource } from './context.js';
 import { classifyPackageInput } from '../../../utils/package-input.js';
 import { normalizePlatforms } from '../../../utils/platform-mapper.js';
 import { parsePackageYml } from '../../../utils/package-yml.js';
-import { getLocalPackageYmlPath } from '../../../utils/paths.js';
+import { getLocalPackageYmlPath, getLocalOpenPackageDir } from '../../../utils/paths.js';
 import { exists } from '../../../utils/fs.js';
-import { createWorkspacePackageYml } from '../../../utils/package-management.js';
+import { createWorkspacePackageYml, ensureLocalOpenPackageStructure } from '../../../utils/package-management.js';
+import { logger } from '../../../utils/logger.js';
+import { resolveDeclaredPath } from '../../../utils/path-resolution.js';
 
 /**
  * Build context for registry-based installation
@@ -95,13 +98,92 @@ export async function buildGitInstallContext(
 }
 
 /**
- * Build context for apply command
+ * Build context for workspace root installation
+ * Used when installing/applying workspace-level files from .openpackage/
+ */
+export async function buildWorkspaceRootInstallContext(
+  cwd: string,
+  options: InstallOptions,
+  mode: 'install' | 'apply' = 'install'
+): Promise<InstallationContext | null> {
+  // Ensure .openpackage/ structure exists
+  await ensureLocalOpenPackageStructure(cwd);
+  
+  // Create workspace manifest if it doesn't exist
+  await createWorkspacePackageYml(cwd);
+  
+  const openpackageDir = getLocalOpenPackageDir(cwd);
+  const packageYmlPath = getLocalPackageYmlPath(cwd);
+  
+  // Check if workspace manifest exists
+  if (!(await exists(packageYmlPath))) {
+    logger.debug('No workspace manifest found, skipping workspace root context');
+    return null;
+  }
+  
+  // Load workspace manifest
+  let config;
+  try {
+    config = await parsePackageYml(packageYmlPath);
+  } catch (error) {
+    logger.warn(`Failed to read workspace manifest: ${error}`);
+    return null;
+  }
+  
+  // Use workspace directory name as package name if not specified in manifest
+  const packageName = config.name || basename(cwd);
+  
+  const source: PackageSource = {
+    type: 'workspace',
+    packageName,
+    version: config.version,
+    contentRoot: openpackageDir
+  };
+  
+  return {
+    source,
+    mode,
+    options: mode === 'apply' ? { ...options, force: true } : options,
+    platforms: normalizePlatforms(options.platforms) || [],
+    cwd,
+    targetDir: '.',
+    resolvedPackages: [],
+    warnings: [],
+    errors: []
+  };
+}
+
+/**
+ * Build context for apply command (single package)
  */
 export async function buildApplyContext(
   cwd: string,
   packageName: string,
   options: InstallOptions
-): Promise<InstallationContext> {
+): Promise<InstallationContext>;
+
+/**
+ * Build context for apply command (bulk apply when no package specified)
+ */
+export async function buildApplyContext(
+  cwd: string,
+  packageName: undefined,
+  options: InstallOptions
+): Promise<InstallationContext[]>;
+
+/**
+ * Build context for apply command
+ */
+export async function buildApplyContext(
+  cwd: string,
+  packageName: string | undefined,
+  options: InstallOptions
+): Promise<InstallationContext | InstallationContext[]> {
+  // No package name = apply workspace root + all installed packages
+  if (!packageName) {
+    return buildBulkApplyContexts(cwd, options);
+  }
+  
   const source: PackageSource = {
     type: 'workspace',
     packageName
@@ -170,6 +252,14 @@ async function buildBulkInstallContexts(
   cwd: string,
   options: InstallOptions
 ): Promise<InstallationContext[]> {
+  const contexts: InstallationContext[] = [];
+  
+  // First, try to build workspace root context
+  const workspaceContext = await buildWorkspaceRootInstallContext(cwd, options, 'install');
+  if (workspaceContext) {
+    contexts.push(workspaceContext);
+  }
+  
   // Ensure workspace manifest exists before reading
   await createWorkspacePackageYml(cwd);
   
@@ -177,49 +267,112 @@ async function buildBulkInstallContexts(
   const opkgYmlPath = getLocalPackageYmlPath(cwd);
   const opkgYml = await parsePackageYml(opkgYmlPath);
   
-  if (!opkgYml.packages || opkgYml.packages.length === 0) {
-    return [];
+  // Get workspace package name to exclude it from bulk install
+  const workspacePackageName = workspaceContext?.source.packageName;
+  
+  if (opkgYml.packages && opkgYml.packages.length > 0) {
+    for (const dep of opkgYml.packages) {
+      // Skip if this package matches the workspace package name
+      if (workspacePackageName && dep.name === workspacePackageName) {
+        logger.debug(`Skipping workspace package '${dep.name}' from bulk install`);
+        continue;
+      }
+      
+      let source: PackageSource;
+      
+      if (dep.git) {
+        // Git source
+        source = {
+          type: 'git',
+          packageName: dep.name,
+          gitUrl: dep.git,
+          gitRef: dep.ref,
+          gitSubdirectory: dep.subdirectory
+        };
+      } else if (dep.path) {
+        // Path source - resolve tilde paths before creating source
+        const resolved = resolveDeclaredPath(dep.path, cwd);
+        const isTarball = dep.path.endsWith('.tgz') || dep.path.endsWith('.tar.gz');
+        
+        source = {
+          type: 'path',
+          packageName: dep.name,
+          localPath: resolved.absolute,
+          sourceType: isTarball ? 'tarball' : 'directory'
+        };
+      } else {
+        // Registry source
+        source = {
+          type: 'registry',
+          packageName: dep.name,
+          version: dep.version
+        };
+      }
+      
+      contexts.push({
+        source,
+        mode: 'install',
+        options,
+        platforms: normalizePlatforms(options.platforms) || [],
+        cwd,
+        targetDir: '.',
+        resolvedPackages: [],
+        warnings: [],
+        errors: []
+      });
+    }
   }
+  
+  return contexts;
+}
+
+/**
+ * Build contexts for bulk apply
+ */
+async function buildBulkApplyContexts(
+  cwd: string,
+  options: InstallOptions
+): Promise<InstallationContext[]> {
+  const { readWorkspaceIndex } = await import('../../../utils/workspace-index-yml.js');
+  const { index } = await readWorkspaceIndex(cwd);
   
   const contexts: InstallationContext[] = [];
   
-  for (const dep of opkgYml.packages) {
-    let source: PackageSource;
+  // First, try to build workspace root context if it exists in index
+  const workspaceContext = await buildWorkspaceRootInstallContext(cwd, options, 'apply');
+  if (workspaceContext) {
+    const workspacePackageName = workspaceContext.source.packageName;
     
-    if (dep.git) {
-      // Git source
-      source = {
-        type: 'git',
-        packageName: dep.name,
-        gitUrl: dep.git,
-        gitRef: dep.ref,
-        gitSubdirectory: dep.subdirectory
-      };
-    } else if (dep.path) {
-      // Path source
-      const isAbsolute = dep.path.startsWith('/');
-      const isTarball = dep.path.endsWith('.tgz') || dep.path.endsWith('.tar.gz');
-      
-      source = {
-        type: 'path',
-        packageName: dep.name,
-        localPath: dep.path,
-        sourceType: isTarball ? 'tarball' : 'directory'
-      };
-    } else {
-      // Registry source
-      source = {
-        type: 'registry',
-        packageName: dep.name,
-        version: dep.version
-      };
+    // Check if workspace package is in index (has been installed)
+    if (index.packages?.[workspacePackageName]) {
+      contexts.push(workspaceContext);
     }
+  }
+  
+  // Then apply all other installed packages
+  const packageNames = Object.keys(index.packages ?? {}).sort();
+  const workspacePackageName = workspaceContext?.source.packageName;
+  
+  for (const name of packageNames) {
+    // Skip workspace package (already added)
+    if (workspacePackageName && name === workspacePackageName) {
+      continue;
+    }
+    
+    const source: PackageSource = {
+      type: 'workspace',
+      packageName: name
+      // version and contentRoot will be populated from workspace index
+    };
     
     contexts.push({
       source,
-      mode: 'install',
-      options,
-      platforms: normalizePlatforms(options.platforms) || [],
+      mode: 'apply',
+      options: {
+        ...options,
+        force: true // Apply always overwrites
+      },
+      platforms: [], // Will be populated from detected platforms
       cwd,
       targetDir: '.',
       resolvedPackages: [],

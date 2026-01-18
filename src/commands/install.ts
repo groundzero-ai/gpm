@@ -215,7 +215,7 @@ export function setupInstallCommand(program: Command): void {
     .description('Install packages to workspace')
     .argument(
       '[package-name]',
-      'name of the package to install (optional - installs all from openpackage.yml if not specified). ' +
+      'name of the package to install (optional - installs workspace-level files and all packages from openpackage.yml if not specified). ' +
       'Supports package@version syntax.'
     )
     .option('--dry-run', 'preview changes without applying them')
