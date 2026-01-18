@@ -7,22 +7,20 @@ import { safePrompts } from '../../utils/prompts.js';
 import { UserCancellationError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 import type { SourceEntry } from './source-collector.js';
-import type { PackageContext } from '../package-context.js';
+import type { AddPackageContext } from './add-context.js';
 
 type ConflictDecision = 'keep-existing' | 'overwrite';
 
 /**
  * Resolve the target path for a registry path.
- * - If registryPath starts with .openpackage/, write to content directory
- * - Otherwise, write to package root directory
+ * Registry paths are package-root-relative (universal subdirs already at root)
  */
-function resolveTargetPath(packageContext: PackageContext, registryPath: string): string {
-  // V2: registry paths are package-root-relative (universal subdirs already at root)
+function resolveTargetPath(packageContext: AddPackageContext, registryPath: string): string {
   return join(packageContext.packageRootDir, registryPath);
 }
 
 export async function copyFilesWithConflictResolution(
-  packageContext: PackageContext,
+  packageContext: AddPackageContext,
   entries: SourceEntry[]
 ): Promise<PackageFile[]> {
   const changedFiles: PackageFile[] = [];
