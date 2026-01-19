@@ -103,8 +103,8 @@ This is a test command.
   it('should detect plugin manifest and transform to OpenPackage format', async () => {
     await createTestPlugin('my-plugin', '2.0.0');
 
-    const { detectPluginType } = await import('../src/core/install/plugin-detector.js');
-    const { transformPluginToPackage } = await import('../src/core/install/plugin-transformer.js');
+    const { detectPluginType } = await import('../../../src/core/install/plugin-detector.js');
+    const { transformPluginToPackage } = await import('../../../src/core/install/plugin-transformer.js');
 
     // Detect plugin
     const detection = await detectPluginType(pluginDir);
@@ -185,7 +185,7 @@ This agent has tools.
     console.log('Installed agent content:', installedContent);
 
     // Parse frontmatter
-    const { splitFrontmatter } = await import('../src/utils/markdown-frontmatter.js');
+    const { splitFrontmatter } = await import('../../../src/utils/markdown-frontmatter.js');
     const parsed = splitFrontmatter(installedContent);
 
     // Verify tools were converted from "Glob, Grep, LS" to { Glob: true, Grep: true, LS: true }
@@ -198,7 +198,7 @@ This agent has tools.
   });
 
   it('should parse git spec with subdirectory syntax', async () => {
-    const { parseGitSpec } = await import('../src/utils/git-spec.js');
+    const { parseGitSpec } = await import('../../../src/utils/git-spec.js');
 
     // Test subdirectory only
     const spec1 = parseGitSpec('git:https://github.com/user/repo.git#subdirectory=plugins/my-plugin');

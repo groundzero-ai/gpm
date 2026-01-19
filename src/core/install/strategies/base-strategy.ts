@@ -51,6 +51,12 @@ export abstract class BaseStrategy implements InstallationStrategy {
   ): FlowContext {
     const platformDef = getPlatformDefinition(context.platform, context.workspaceRoot);
     
+    // Determine the original source format
+    // This is crucial for conditional flows that check $$source
+    const originalSource = context.packageFormat?.sourcePlatform || 
+                          context.packageFormat?.platform || 
+                          'openpackage';
+    
     return {
       workspaceRoot: context.workspaceRoot,
       packageRoot: context.packageRoot,
@@ -64,8 +70,10 @@ export abstract class BaseStrategy implements InstallationStrategy {
         rootFile: platformDef.rootFile,
         rootDir: deriveRootDirFromFlows(platformDef),
         // Context variables for conditional flows
-        platform: context.platform,
-        source: context.packageFormat?.sourcePlatform || 'openpackage',
+        platform: context.platform,  // Target platform
+        targetPlatform: context.platform,  // Explicit target platform
+        source: originalSource,  // Original source format (preserved through conversion)
+        sourcePlatform: originalSource,  // Explicit source platform
         // Path variable for conditional installation behavior
         targetRoot: context.workspaceRoot
       },

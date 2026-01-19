@@ -46,6 +46,14 @@ export interface ConversionPipeline {
 }
 
 /**
+ * Conversion options
+ */
+export interface ConversionOptions {
+  dryRun?: boolean;
+  sourcePlatform?: string;
+}
+
+/**
  * Conversion result
  */
 export interface ConversionResult {
@@ -77,9 +85,7 @@ export class PlatformConverter {
   async convert(
     pkg: Package,
     targetPlatform: Platform,
-    options?: {
-      dryRun?: boolean;
-    }
+    options?: ConversionOptions
   ): Promise<ConversionResult> {
     logger.info('Starting platform conversion', {
       package: pkg.metadata.name,
@@ -189,9 +195,7 @@ export class PlatformConverter {
   async executePipeline(
     pkg: Package,
     pipeline: ConversionPipeline,
-    options?: {
-      dryRun?: boolean;
-    }
+    options?: ConversionOptions
   ): Promise<ConversionResult> {
     const result: ConversionResult = {
       success: true,
@@ -214,7 +218,9 @@ export class PlatformConverter {
           currentPackage,
           stage,
           tempDir,
-          dryRun
+          dryRun,
+          pipeline.target,  // Pass target platform
+          options?.sourcePlatform  // Pass original source platform
         );
         
         result.stages.push({
@@ -233,7 +239,24 @@ export class PlatformConverter {
         if (stageResult.convertedFiles) {
           currentPackage = {
             ...currentPackage,
-            files: stageResult.convertedFiles
+            files: stageResult.convertedFiles,
+            // Update format to universal while preserving source platform
+            _format: {
+              type: 'universal',
+              platform: undefined,
+              sourcePlatform: options?.sourcePlatform || currentPackage._format?.sourcePlatform || currentPackage._format?.platform,
+              confidence: 1.0,
+              analysis: {
+                universalFiles: stageResult.convertedFiles.length,
+                platformSpecificFiles: 0,
+                detectedPlatforms: new Map(),
+                totalFiles: stageResult.convertedFiles.length,
+                samplePaths: {
+                  universal: stageResult.convertedFiles.slice(0, 3).map(f => f.path),
+                  platformSpecific: []
+                }
+              }
+            }
           };
         }
       }
@@ -314,7 +337,9 @@ export class PlatformConverter {
     pkg: Package,
     stage: ConversionStage,
     tempDir: string,
-    dryRun: boolean
+    dryRun: boolean,
+    targetPlatform: Platform,
+    sourcePlatform?: string
   ): Promise<{
     success: boolean;
     filesProcessed: number;
@@ -341,16 +366,23 @@ export class PlatformConverter {
         await writeTextFile(filePath, file.content);
       }
       
-      // Build flow context
+      // Build flow context with proper platform variables for conditional evaluation
+      // During conversion, we set:
+      // - $$platform = target platform (for conditionals like "$eq": ["$$platform", "claude"])
+      // - $$source = original source format (for conditionals like "$eq": ["$$source", "claude-plugin"])
       const context: FlowContext = {
         workspaceRoot: outputRoot,  // Write outputs away from inputs
         packageRoot,
-        platform: 'claude' as Platform,  // Temporary platform for conversion context
+        platform: targetPlatform,  // Use target platform for conditional evaluation
         packageName: pkg.metadata.name,
-        direction: 'install',  // Always use 'install' direction for conversion (inverted flows handle the logic)
+        direction: 'install',  // Always use 'install' direction for conversion
         variables: {
           name: pkg.metadata.name,
-          version: pkg.metadata.version || '0.0.0'
+          version: pkg.metadata.version || '0.0.0',
+          platform: targetPlatform,  // For conditional: "$eq": ["$$platform", "claude"]
+          source: sourcePlatform || pkg._format?.sourcePlatform || 'openpackage',  // For conditional: "$eq": ["$$source", "claude-plugin"]
+          sourcePlatform: sourcePlatform || pkg._format?.sourcePlatform || 'openpackage',
+          targetPlatform: targetPlatform
         },
         dryRun
       };

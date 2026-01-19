@@ -2,6 +2,14 @@
  * Format Conversion Installation Strategy
  * 
  * Converts package from source format → universal → target platform format.
+ * 
+ * This strategy performs per-platform conversion to handle conditional flows
+ * that depend on the target platform (e.g., `when: { "$eq": ["$$platform", "claude"] }`).
+ * 
+ * Each target platform gets its own conversion pass with proper context variables:
+ * - $$platform = target platform (for conditional evaluation)
+ * - $$source = original source format (preserved through conversion)
+ * 
  * Used when source platform ≠ target platform.
  */
 
@@ -26,8 +34,8 @@ import {
 /**
  * Format Conversion Installation Strategy
  * 
- * Converts package from source format → universal → target platform format.
- * Used when source platform ≠ target platform.
+ * Performs per-platform conversion to ensure conditional flows have
+ * correct context variables during transformation.
  */
 export class ConversionInstallStrategy extends BaseStrategy {
   readonly name = 'conversion';
@@ -44,13 +52,13 @@ export class ConversionInstallStrategy extends BaseStrategy {
     
     this.logStrategySelection(context);
     
-    logger.info(`Converting ${packageName} to ${platform} format`);
+    logger.info(`Converting ${packageName} from ${context.packageFormat?.platform || 'unknown'} to ${platform} format`);
     
     try {
       // Phase 1: Load package files
       const packageFiles = await this.loadPackageFiles(packageRoot);
       
-      // Phase 2: Create package object
+      // Phase 2: Create package object with original format metadata
       const pkg: Package = {
         metadata: {
           name: packageName,
@@ -60,9 +68,19 @@ export class ConversionInstallStrategy extends BaseStrategy {
         _format: context.packageFormat || await this.detectFormat(packageRoot)
       };
       
-      // Phase 3: Convert to universal format
+      // Phase 3: Convert FOR the specific target platform
+      // This ensures conditional flows like `when: { "$eq": ["$$platform", "claude"] }`
+      // have the correct context during conversion
       const converter = createPlatformConverter(workspaceRoot);
-      const conversionResult = await converter.convert(pkg, platform, { dryRun });
+      const conversionResult = await converter.convert(
+        pkg, 
+        platform,  // Target platform for context
+        { 
+          dryRun,
+          // Pass original source platform for conditional flows
+          sourcePlatform: pkg._format?.sourcePlatform || pkg._format?.platform
+        }
+      );
       
       if (!conversionResult.success || !conversionResult.convertedPackage) {
         logger.error('Package conversion failed', {
@@ -167,7 +185,14 @@ export class ConversionInstallStrategy extends BaseStrategy {
       
       const convertedContext: FlowInstallContext = {
         ...context,
-        packageRoot: tempPackageRoot
+        packageRoot: tempPackageRoot,
+        // Preserve original format information for export flows
+        // This allows export flows to check $$source correctly
+        packageFormat: {
+          ...convertedPackage._format!,
+          // Keep the original source platform for conditional flows
+          sourcePlatform: context.packageFormat?.sourcePlatform || context.packageFormat?.platform
+        }
       };
       
       const installResult = await flowStrategy.install(convertedContext, options);
