@@ -8,8 +8,10 @@
 import { dirname } from 'path';
 import type { Platform } from '../platforms.js';
 import type { PackageFile } from '../../types/index.js';
+import type { PackageConversionContext } from '../../types/conversion-context.js';
 import { getAllPlatforms, isPlatformId } from '../platforms.js';
 import { logger } from '../../utils/logger.js';
+import { createContextFromFormat } from '../conversion-context/index.js';
 
 /**
  * Package format classification
@@ -24,12 +26,6 @@ export interface PackageFormat {
    * If platform-specific, which platform?
    */
   platform?: Platform;
-  
-  /**
-   * Detected source platform ID (for $$source variable in flow conditions)
-   * Defaults to 'openpackage' if universal format
-   */
-  sourcePlatform: string;
   
   /**
    * Confidence score (0-1) based on file analysis
@@ -100,7 +96,6 @@ export function detectPackageFormat(files: PackageFile[]): PackageFormat {
     return {
       type: 'platform-specific',
       platform: 'claude-plugin',
-      sourcePlatform: 'claude-plugin',
       confidence: 1.0,
       analysis: {
         universalFiles: 0,
@@ -215,7 +210,6 @@ function determineFormat(analysis: FormatAnalysis): PackageFormat {
   if (totalFiles === 0) {
     return {
       type: 'universal',
-      sourcePlatform: 'openpackage',
       confidence: 0,
       analysis
     };
@@ -235,7 +229,6 @@ function determineFormat(analysis: FormatAnalysis): PackageFormat {
     
     return {
       type: 'universal',
-      sourcePlatform: 'openpackage',
       confidence: universalRatio,
       analysis
     };
@@ -265,7 +258,6 @@ function determineFormat(analysis: FormatAnalysis): PackageFormat {
       return {
         type: 'platform-specific',
         platform: dominantPlatform,
-        sourcePlatform: dominantPlatform,
         confidence: platformRatio,
         analysis
       };
@@ -281,7 +273,6 @@ function determineFormat(analysis: FormatAnalysis): PackageFormat {
   
   return {
     type: 'universal',
-    sourcePlatform: 'openpackage',
     confidence: Math.max(universalRatio, 0.3),
     analysis
   };
@@ -312,4 +303,20 @@ export function needsConversion(
   }
   
   return false;
+}
+
+/**
+ * Detect package format and create conversion context
+ * 
+ * Convenience function that combines format detection with context creation.
+ * Use this at package loading time to get both format and context together.
+ */
+export function detectPackageFormatWithContext(files: PackageFile[]): {
+  format: PackageFormat;
+  context: PackageConversionContext;
+} {
+  const format = detectPackageFormat(files);
+  const context = createContextFromFormat(format);
+  
+  return { format, context };
 }

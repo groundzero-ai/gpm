@@ -1116,7 +1116,7 @@ export class DefaultFlowExecutor implements FlowExecutor {
       return content;
     }
     if (content.frontmatter) {
-      const frontmatterStr = yaml.dump(content.frontmatter, { indent: 2 });
+      const frontmatterStr = yaml.dump(content.frontmatter, { indent: 2, lineWidth: -1 });
       return `---\n${frontmatterStr}---\n${content.body || ''}`;
     }
 

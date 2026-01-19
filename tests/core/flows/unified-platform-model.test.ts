@@ -235,7 +235,6 @@ describe('Unified Platform Model', () => {
       
       assert.equal(format.type, 'platform-specific');
       assert.equal(format.platform, 'claude-plugin');
-      assert.equal(format.sourcePlatform, 'claude-plugin');
       assert.equal(format.confidence, 1.0);
     });
 
@@ -256,7 +255,7 @@ describe('Unified Platform Model', () => {
       const format = detectPackageFormat(files);
       
       assert.equal(format.type, 'universal');
-      assert.equal(format.sourcePlatform, 'openpackage');
+      assert.equal(format.platform, undefined);
     });
 
     it('should include detection array in claude-plugin platform definition', () => {

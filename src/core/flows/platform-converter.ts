@@ -9,6 +9,7 @@
 import { join, relative } from 'path';
 import { promises as fs } from 'fs';
 import type { Package, PackageFile } from '../../types/index.js';
+import type { PackageConversionContext } from '../../types/conversion-context.js';
 import type { Platform } from '../platforms.js';
 import type { Flow, FlowContext, FlowResult } from '../../types/flows.js';
 import type { PackageFormat } from '../install/format-detector.js';
@@ -24,6 +25,11 @@ import { ensureDir, writeTextFile, readTextFile } from '../../utils/fs.js';
 import { tmpdir } from 'os';
 import { mkdtemp, rm } from 'fs/promises';
 import { minimatch } from 'minimatch';
+import { 
+  createContextFromPackage,
+  updateContextAfterConversion,
+  withTargetPlatform 
+} from '../conversion-context/index.js';
 
 /**
  * Conversion pipeline stage
@@ -50,15 +56,15 @@ export interface ConversionPipeline {
  */
 export interface ConversionOptions {
   dryRun?: boolean;
-  sourcePlatform?: string;
 }
 
 /**
- * Conversion result
+ * Conversion result with updated context
  */
 export interface ConversionResult {
   success: boolean;
   convertedPackage?: Package;
+  updatedContext?: PackageConversionContext;
   stages: Array<{
     stage: string;
     filesProcessed: number;
@@ -80,17 +86,31 @@ export class PlatformConverter {
   }
   
   /**
-   * Convert a package to target platform format
+   * Convert a package to target platform format with conversion context
+   * 
+   * @param pkg - Package to convert
+   * @param context - Conversion context (optional, will be created if not provided)
+   * @param targetPlatform - Target platform
+   * @param options - Conversion options
+   * @returns Conversion result with updated context
    */
   async convert(
     pkg: Package,
+    context: PackageConversionContext | undefined,
     targetPlatform: Platform,
     options?: ConversionOptions
   ): Promise<ConversionResult> {
     logger.info('Starting platform conversion', {
       package: pkg.metadata.name,
-      targetPlatform
+      targetPlatform,
+      hasContext: !!context
     });
+    
+    // Create or use provided context
+    const conversionContext = context || createContextFromPackage(pkg);
+    
+    // Set target platform
+    const contextWithTarget = withTargetPlatform(conversionContext, targetPlatform);
     
     // Use provided format if available, otherwise detect from files
     const sourceFormat = pkg._format || detectPackageFormat(pkg.files);
@@ -99,7 +119,8 @@ export class PlatformConverter {
       type: sourceFormat.type,
       platform: sourceFormat.platform,
       confidence: sourceFormat.confidence,
-      source: pkg._format ? 'provided' : 'detected'
+      source: pkg._format ? 'provided' : 'detected',
+      contextOriginal: conversionContext.originalFormat.platform
     });
     
     // Build conversion pipeline
@@ -110,12 +131,13 @@ export class PlatformConverter {
       return {
         success: true,
         convertedPackage: pkg,
+        updatedContext: contextWithTarget,
         stages: []
       };
     }
     
-    // Execute pipeline
-    return await this.executePipeline(pkg, pipeline, options);
+    // Execute pipeline with context
+    return await this.executePipeline(pkg, contextWithTarget, pipeline, options);
   }
   
   /**
@@ -190,10 +212,11 @@ export class PlatformConverter {
   }
   
   /**
-   * Execute conversion pipeline
+   * Execute conversion pipeline with context
    */
   async executePipeline(
     pkg: Package,
+    context: PackageConversionContext,
     pipeline: ConversionPipeline,
     options?: ConversionOptions
   ): Promise<ConversionResult> {
@@ -203,6 +226,7 @@ export class PlatformConverter {
     };
     
     let currentPackage = pkg;
+    let currentContext = context;
     const dryRun = options?.dryRun ?? false;
     
     // Create temporary directory for intermediate files
@@ -216,11 +240,11 @@ export class PlatformConverter {
         
         const stageResult = await this.executeStage(
           currentPackage,
+          currentContext,
           stage,
           tempDir,
           dryRun,
-          pipeline.target,  // Pass target platform
-          options?.sourcePlatform  // Pass original source platform
+          pipeline.target
         );
         
         result.stages.push({
@@ -232,6 +256,7 @@ export class PlatformConverter {
         
         if (!stageResult.success) {
           result.success = false;
+          result.updatedContext = currentContext;
           return result;
         }
         
@@ -240,11 +265,10 @@ export class PlatformConverter {
           currentPackage = {
             ...currentPackage,
             files: stageResult.convertedFiles,
-            // Update format to universal while preserving source platform
+            // Update format to universal (source platform tracked in context)
             _format: {
               type: 'universal',
               platform: undefined,
-              sourcePlatform: options?.sourcePlatform || currentPackage._format?.sourcePlatform || currentPackage._format?.platform,
               confidence: 1.0,
               analysis: {
                 universalFiles: stageResult.convertedFiles.length,
@@ -258,15 +282,24 @@ export class PlatformConverter {
               }
             }
           };
+          
+          // Update context after conversion
+          currentContext = updateContextAfterConversion(
+            currentContext,
+            { type: 'universal', platform: undefined },
+            pipeline.target
+          );
         }
       }
       
       result.convertedPackage = currentPackage;
+      result.updatedContext = currentContext;
       return result;
       
     } catch (error) {
       logger.error('Conversion pipeline failed', { error });
       result.success = false;
+      result.updatedContext = currentContext;
       result.stages.push({
         stage: 'pipeline',
         filesProcessed: 0,
@@ -331,15 +364,15 @@ export class PlatformConverter {
   }
   
   /**
-   * Execute a single conversion stage
+   * Execute a single conversion stage with context
    */
   private async executeStage(
     pkg: Package,
+    context: PackageConversionContext,
     stage: ConversionStage,
     tempDir: string,
     dryRun: boolean,
-    targetPlatform: Platform,
-    sourcePlatform?: string
+    targetPlatform: Platform
   ): Promise<{
     success: boolean;
     filesProcessed: number;
@@ -370,7 +403,7 @@ export class PlatformConverter {
       // During conversion, we set:
       // - $$platform = target platform (for conditionals like "$eq": ["$$platform", "claude"])
       // - $$source = original source format (for conditionals like "$eq": ["$$source", "claude-plugin"])
-      const context: FlowContext = {
+      const flowContext: FlowContext = {
         workspaceRoot: outputRoot,  // Write outputs away from inputs
         packageRoot,
         platform: targetPlatform,  // Use target platform for conditional evaluation
@@ -380,8 +413,8 @@ export class PlatformConverter {
           name: pkg.metadata.name,
           version: pkg.metadata.version || '0.0.0',
           platform: targetPlatform,  // For conditional: "$eq": ["$$platform", "claude"]
-          source: sourcePlatform || pkg._format?.sourcePlatform || 'openpackage',  // For conditional: "$eq": ["$$source", "claude-plugin"]
-          sourcePlatform: sourcePlatform || pkg._format?.sourcePlatform || 'openpackage',
+          source: context.originalFormat.platform || 'openpackage',  // Use context for $$source
+          sourcePlatform: context.originalFormat.platform || 'openpackage',  // Use context for sourcePlatform
           targetPlatform: targetPlatform
         },
         dryRun
@@ -420,7 +453,7 @@ export class PlatformConverter {
             from: sourceRelative
           };
           
-          const flowResult = await executor.executeFlow(concreteFlow, context);
+          const flowResult = await executor.executeFlow(concreteFlow, flowContext);
           
           if (!flowResult.success) {
             return {

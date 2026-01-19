@@ -1,23 +1,29 @@
 /**
  * Flow-Based Index Installer
  * 
- * Replaces legacy subdirs-based installation with flow-based installation.
- * Integrates the flow executor with workspace index management.
+ * INFRASTRUCTURE LAYER: Workspace index integration
+ * 
+ * Wraps flow-based-installer.ts with workspace index management.
+ * This is the primary entry point for production installations.
+ * 
+ * Delegates to flow-based-installer.ts for core flow execution,
+ * then updates workspace index with file mappings.
+ * 
+ * Hierarchy:
+ *   Command Layer → install-flow.ts → THIS FILE → flow-based-installer.ts
  */
 
-import { dirname, join, sep } from 'path';
+import { join } from 'path';
 import { promises as fs } from 'fs';
 import {
   installPackageWithFlows,
   type FlowInstallContext
 } from '../core/install/flow-based-installer.js';
 import { resolvePackageContentRoot } from '../core/install/local-source-resolution.js';
-import { getRegistryDirectories } from '../core/directory.js';
 import { logger } from './logger.js';
 import { formatPathForYaml } from './path-resolution.js';
 import { sortMapping } from './package-index-yml.js';
 import {
-  getWorkspaceIndexPath,
   readWorkspaceIndex,
   writeWorkspaceIndex
 } from './workspace-index-yml.js';
@@ -25,6 +31,16 @@ import { exists } from './fs.js';
 import type { Platform } from '../core/platforms.js';
 import type { InstallOptions } from '../types/index.js';
 import type { WorkspaceIndexFileMapping } from '../types/workspace-index.js';
+import { createContextFromFormat } from '../core/conversion-context/creation.js';
+import { detectFormatWithContextFromDirectory } from '../core/install/helpers/format-detection.js';
+import {
+  logConflictMessages,
+  logErrorMessages
+} from '../core/install/helpers/result-logging.js';
+import {
+  collectConflictMessages,
+  collectErrorMessages
+} from '../core/install/helpers/result-aggregation.js';
 
 // ============================================================================
 // Types
@@ -152,6 +168,20 @@ export async function installPackageByIndexWithFlows(
 
   // Execute flows for each platform
   for (const platform of platforms) {
+    // Create conversion context from format or detect it using shared utility
+    let conversionContext;
+    let format = packageFormat;
+    
+    if (!packageFormat) {
+      // Detect format and context from directory
+      const result = await detectFormatWithContextFromDirectory(resolvedContentRoot);
+      format = result.format;
+      conversionContext = result.context;
+    } else {
+      // Create context from existing format
+      conversionContext = createContextFromFormat(packageFormat);
+    }
+    
     const installContext: FlowInstallContext = {
       packageName,
       packageRoot: resolvedContentRoot,
@@ -160,7 +190,8 @@ export async function installPackageByIndexWithFlows(
       packageVersion: version,
       priority: 0, // Priority is calculated from dependency graph during multi-package installs
       dryRun: options.dryRun ?? false,
-      packageFormat  // Pass format metadata if available
+      packageFormat: format,
+      conversionContext
     };
 
     try {
@@ -170,14 +201,21 @@ export async function installPackageByIndexWithFlows(
       for (const absTarget of result.targetPaths ?? []) {
         allTargetPaths.add(absTarget);
       }
+      // Merge file mappings with normalization
       for (const [source, targets] of Object.entries(result.fileMapping ?? {})) {
-        // Normalize source key to canonical form
         const normalizedSource = await normalizeSourceKey(source);
         
-        const existing = fileMapping[normalizedSource] ?? [];
-        // Merge while deduping by target path; prefer complex mapping over string.
+        if (!fileMapping[normalizedSource]) {
+          fileMapping[normalizedSource] = [];
+        }
+        
+        // Note: mergeWorkspaceFileMappings expects nested objects, so we wrap in object
+        const tempTarget = { [normalizedSource]: fileMapping[normalizedSource] };
+        const tempSource = { [normalizedSource]: targets };
+        
+        // Merge while deduping by target path; prefer complex mapping over string
         const byTarget = new Map<string, string | WorkspaceIndexFileMapping>();
-        for (const m of existing) {
+        for (const m of fileMapping[normalizedSource]) {
           const targetPath = typeof m === 'string' ? m : m.target;
           byTarget.set(targetPath, m);
         }
@@ -198,21 +236,9 @@ export async function installPackageByIndexWithFlows(
       aggregatedResult.updated += 0; // Flow executor doesn't distinguish new vs updated yet
       aggregatedResult.skipped += result.filesProcessed - result.filesWritten;
 
-      // Collect conflicts
-      for (const conflict of result.conflicts) {
-        const conflictMsg = `${conflict.targetPath}: ${conflict.message}`;
-        if (!allConflicts.includes(conflictMsg)) {
-          allConflicts.push(conflictMsg);
-        }
-      }
-
-      // Collect errors
-      for (const error of result.errors) {
-        const errorMsg = `${error.sourcePath}: ${error.message}`;
-        if (!allErrors.includes(errorMsg)) {
-          allErrors.push(errorMsg);
-        }
-      }
+      // Collect conflicts and errors using shared utilities
+      collectConflictMessages(allConflicts, result.conflicts);
+      collectErrorMessages(allErrors, result.errors);
 
       // Log results per platform
       if (result.filesProcessed > 0) {
@@ -228,21 +254,9 @@ export async function installPackageByIndexWithFlows(
     }
   }
 
-  // Log conflicts
-  if (allConflicts.length > 0) {
-    logger.warn(`Detected ${allConflicts.length} conflicts during installation:`);
-    for (const conflict of allConflicts) {
-      logger.warn(`  ${conflict}`);
-    }
-  }
-
-  // Log errors
-  if (allErrors.length > 0) {
-    logger.error(`Encountered ${allErrors.length} errors during installation:`);
-    for (const error of allErrors) {
-      logger.error(`  ${error}`);
-    }
-  }
+  // Log aggregated results using shared utilities
+  logConflictMessages(allConflicts);
+  logErrorMessages(allErrors);
 
   // Update workspace index if not dry-run
   if (!options.dryRun) {

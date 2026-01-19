@@ -16,6 +16,7 @@
 import { join, relative } from 'path';
 import type { Platform } from '../../platforms.js';
 import type { Package } from '../../../types/index.js';
+import type { PackageConversionContext } from '../../../types/conversion-context.js';
 import type { PackageFormat } from '../format-detector.js';
 import type { InstallOptions } from '../../../types/index.js';
 import type { FlowInstallContext, FlowInstallResult } from './types.js';
@@ -28,8 +29,11 @@ import { logger } from '../../../utils/logger.js';
 import {
   createTempPackageDirectory,
   writeTempPackageFiles,
+  writeConversionContext,
+  readConversionContext,
   cleanupTempDirectory
 } from './helpers/temp-directory.js';
+import { createContextFromFormat } from '../../conversion-context/index.js';
 
 /**
  * Format Conversion Installation Strategy
@@ -68,18 +72,17 @@ export class ConversionInstallStrategy extends BaseStrategy {
         _format: context.packageFormat || await this.detectFormat(packageRoot)
       };
       
-      // Phase 3: Convert FOR the specific target platform
+      // Phase 3: Create conversion context and convert FOR the specific target platform
       // This ensures conditional flows like `when: { "$eq": ["$$platform", "claude"] }`
       // have the correct context during conversion
+      const conversionContext = createContextFromFormat(pkg._format!);
+      
       const converter = createPlatformConverter(workspaceRoot);
       const conversionResult = await converter.convert(
-        pkg, 
-        platform,  // Target platform for context
-        { 
-          dryRun,
-          // Pass original source platform for conditional flows
-          sourcePlatform: pkg._format?.sourcePlatform || pkg._format?.platform
-        }
+        pkg,
+        conversionContext,  // Pass conversion context
+        platform,  // Target platform
+        { dryRun }
       );
       
       if (!conversionResult.success || !conversionResult.convertedPackage) {
@@ -103,6 +106,7 @@ export class ConversionInstallStrategy extends BaseStrategy {
       // Phase 4: Write converted files to temp directory and install
       return await this.installConvertedPackage(
         conversionResult.convertedPackage,
+        conversionResult.updatedContext || conversionContext,
         context,
         options
       );
@@ -157,10 +161,11 @@ export class ConversionInstallStrategy extends BaseStrategy {
   }
   
   /**
-   * Install converted package from temp directory
+   * Install converted package from temp directory with context
    */
   private async installConvertedPackage(
     convertedPackage: Package,
+    conversionContext: PackageConversionContext,
     context: FlowInstallContext,
     options?: InstallOptions
   ): Promise<FlowInstallResult> {
@@ -173,8 +178,11 @@ export class ConversionInstallStrategy extends BaseStrategy {
       // Write converted files
       await writeTempPackageFiles(convertedPackage.files, tempPackageRoot);
       
+      // Write conversion context (persists through temp directory)
+      await writeConversionContext(conversionContext, tempPackageRoot);
+      
       logger.debug(
-        `Wrote ${convertedPackage.files.length} converted files to temp directory`,
+        `Wrote ${convertedPackage.files.length} converted files and context to temp directory`,
         { tempPackageRoot }
       );
       
@@ -186,13 +194,10 @@ export class ConversionInstallStrategy extends BaseStrategy {
       const convertedContext: FlowInstallContext = {
         ...context,
         packageRoot: tempPackageRoot,
-        // Preserve original format information for export flows
-        // This allows export flows to check $$source correctly
-        packageFormat: {
-          ...convertedPackage._format!,
-          // Keep the original source platform for conditional flows
-          sourcePlatform: context.packageFormat?.sourcePlatform || context.packageFormat?.platform
-        }
+        // Updated package format after conversion
+        packageFormat: convertedPackage._format,
+        // Pass updated conversion context
+        conversionContext
       };
       
       const installResult = await flowStrategy.install(convertedContext, options);

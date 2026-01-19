@@ -206,7 +206,6 @@ describe('Platform Converter', () => {
         _format: {
           type: 'platform-specific',
           platform: 'claude-plugin',
-          sourcePlatform: 'claude-plugin',
           confidence: 1.0,
           analysis: {
             universalFiles: 0,

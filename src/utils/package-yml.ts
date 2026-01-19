@@ -58,6 +58,7 @@ export function serializePackageYml(config: PackageYml): string {
     noArrayIndent: true,
     sortKeys: false,
     quotingType: '"', // Prefer double quotes for consistency
+    lineWidth: -1, // Disable line wrapping to prevent folded scalar style (>-)
   });
 
   // Ensure scoped names (starting with @) are quoted

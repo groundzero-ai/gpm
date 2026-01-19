@@ -49,7 +49,8 @@ export async function loadPackageFromDirectory(
   const pluginDetection = await detectPluginType(dirPath);
   if (pluginDetection.isPlugin && pluginDetection.type === 'individual') {
     logger.info('Detected Claude Code plugin, transforming to OpenPackage format', { dirPath });
-    return await transformPluginToPackage(dirPath, context);
+    const { package: pkg } = await transformPluginToPackage(dirPath, context);
+    return pkg;
   }
   
   // If it's a marketplace, we need to handle plugin selection (done upstream in install command)

@@ -11,9 +11,9 @@ import type { InstallationStrategy, FlowInstallContext, FlowInstallResult } from
 import type { InstallOptions } from '../../../types/index.js';
 import { getPlatformDefinition, deriveRootDirFromFlows } from '../../platforms.js';
 import { logger } from '../../../utils/logger.js';
-import { toTildePath } from '../../../utils/path-resolution.js';
 import { createEmptyResult } from './helpers/result-converter.js';
 import { getApplicableFlows } from './helpers/flow-helpers.js';
+import { logInstallationResult } from '../helpers/result-logging.js';
 
 /**
  * Abstract base class for installation strategies
@@ -44,6 +44,8 @@ export abstract class BaseStrategy implements InstallationStrategy {
   
   /**
    * Build flow context with standard variables
+   * 
+   * Uses conversion context as the single source of truth for format identity.
    */
   protected buildFlowContext(
     context: FlowInstallContext,
@@ -51,11 +53,14 @@ export abstract class BaseStrategy implements InstallationStrategy {
   ): FlowContext {
     const platformDef = getPlatformDefinition(context.platform, context.workspaceRoot);
     
-    // Determine the original source format
-    // This is crucial for conditional flows that check $$source
-    const originalSource = context.packageFormat?.sourcePlatform || 
-                          context.packageFormat?.platform || 
-                          'openpackage';
+    // Use conversion context as single source of truth for original format
+    const originalSource = context.conversionContext.originalFormat.platform || 'openpackage';
+    
+    logger.debug('Building flow context', {
+      originalSource,
+      targetPlatform: context.platform,
+      conversions: context.conversionContext.conversionHistory.length
+    });
     
     return {
       workspaceRoot: context.workspaceRoot,
@@ -72,7 +77,7 @@ export abstract class BaseStrategy implements InstallationStrategy {
         // Context variables for conditional flows
         platform: context.platform,  // Target platform
         targetPlatform: context.platform,  // Explicit target platform
-        source: originalSource,  // Original source format (preserved through conversion)
+        source: originalSource,  // Original source format (from conversion context)
         sourcePlatform: originalSource,  // Explicit source platform
         // Path variable for conditional installation behavior
         targetRoot: context.workspaceRoot
@@ -94,46 +99,15 @@ export abstract class BaseStrategy implements InstallationStrategy {
   }
   
   /**
-   * Log installation results
+   * Log installation results using shared utility
    */
   protected logResults(result: FlowInstallResult, context: FlowInstallContext): void {
-    if (result.filesProcessed > 0) {
-      logger.info(
-        `Processed ${result.filesProcessed} files for ${context.packageName} on platform ${context.platform}` +
-        (context.dryRun ? ' (dry run)' : `, wrote ${result.filesWritten} files`)
-      );
-    }
-    
-    this.logConflicts(result);
-    this.logErrors(result);
-  }
-  
-  /**
-   * Log conflicts detected during installation
-   */
-  protected logConflicts(result: FlowInstallResult): void {
-    if (result.conflicts.length > 0) {
-      logger.warn(`Detected ${result.conflicts.length} conflicts during installation`);
-      for (const conflict of result.conflicts) {
-        const winner = conflict.packages.find(p => p.chosen);
-        const loser = conflict.packages.find(p => !p.chosen);
-        logger.warn(
-          `  ${toTildePath(conflict.targetPath)}: ${winner?.packageName} (priority ${winner?.priority}) overwrites ${loser?.packageName}`
-        );
-      }
-    }
-  }
-  
-  /**
-   * Log errors encountered during installation
-   */
-  protected logErrors(result: FlowInstallResult): void {
-    if (result.errors.length > 0) {
-      logger.error(`Encountered ${result.errors.length} errors during installation`);
-      for (const error of result.errors) {
-        logger.error(`  ${error.sourcePath}: ${error.message}`);
-      }
-    }
+    logInstallationResult(
+      result,
+      context.packageName,
+      context.platform,
+      context.dryRun ?? false
+    );
   }
   
   /**

@@ -91,7 +91,6 @@ describe('Format Detector', () => {
       const format = {
         type: 'platform-specific' as const,
         platform: 'claude' as const,
-        sourcePlatform: 'claude',
         confidence: 0.9,
         analysis: {
           universalFiles: 0,
@@ -108,7 +107,6 @@ describe('Format Detector', () => {
     it('should return false for universal format', () => {
       const format = {
         type: 'universal' as const,
-        sourcePlatform: 'openpackage',
         confidence: 0.9,
         analysis: {
           universalFiles: 10,
@@ -127,7 +125,6 @@ describe('Format Detector', () => {
     it('should return false for universal format', () => {
       const format = {
         type: 'universal' as const,
-        sourcePlatform: 'openpackage',
         confidence: 0.9,
         analysis: {
           universalFiles: 10,
@@ -146,7 +143,6 @@ describe('Format Detector', () => {
       const format = {
         type: 'platform-specific' as const,
         platform: 'claude' as const,
-        sourcePlatform: 'claude',
         confidence: 0.9,
         analysis: {
           universalFiles: 0,
@@ -164,7 +160,6 @@ describe('Format Detector', () => {
       const format = {
         type: 'platform-specific' as const,
         platform: 'claude' as const,
-        sourcePlatform: 'claude',
         confidence: 0.9,
         analysis: {
           universalFiles: 0,

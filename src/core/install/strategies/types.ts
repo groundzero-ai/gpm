@@ -8,6 +8,7 @@ import type { Flow } from '../../../types/flows.js';
 import type { Platform } from '../../platforms.js';
 import type { InstallOptions } from '../../../types/index.js';
 import type { PackageFormat } from '../format-detector.js';
+import type { PackageConversionContext } from '../../../types/conversion-context.js';
 
 /**
  * Installation context
@@ -21,6 +22,14 @@ export interface FlowInstallContext {
   priority: number;
   dryRun: boolean;
   packageFormat?: PackageFormat;
+  
+  /**
+   * Conversion context for tracking package format identity and history
+   * 
+   * REQUIRED: Provides canonical source for `$$source` and `$$platform` variables in flow conditionals.
+   * Contains immutable originalFormat and conversion history for auditing.
+   */
+  conversionContext: PackageConversionContext;
 }
 
 /**

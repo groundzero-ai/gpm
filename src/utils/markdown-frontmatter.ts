@@ -69,7 +69,8 @@ export function dumpYaml(data: any): string {
       indent: 2,
       noArrayIndent: true,
       sortKeys: false,
-      quotingType: '"'
+      quotingType: '"',
+      lineWidth: -1  // Disable line wrapping to prevent folded scalar style (>-)
     })
     .trim();
 }

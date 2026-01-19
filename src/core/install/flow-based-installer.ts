@@ -7,16 +7,15 @@
  * 
  * This module now serves as a thin orchestration layer, delegating to specialized
  * strategy implementations for different installation scenarios.
+ * 
+ * CORE LAYER: Pure flow execution logic
+ * For workspace-integrated installation with index updates, see flow-index-installer.ts
  */
 
-import { join, relative } from 'path';
 import type { Platform } from '../platforms.js';
 import type { InstallOptions } from '../../types/index.js';
 import { platformUsesFlows } from '../platforms.js';
 import { logger } from '../../utils/logger.js';
-import { toTildePath } from '../../utils/path-resolution.js';
-import { detectPackageFormat } from './format-detector.js';
-import { walkFiles } from '../../utils/file-walker.js';
 import {
   selectInstallStrategy,
   type FlowInstallContext,
@@ -24,10 +23,22 @@ import {
   type FlowConflictReport,
   type FlowInstallError
 } from './strategies/index.js';
-import { discoverFlowSources } from '../flows/flow-source-discovery.js';
-import { resolvePattern } from '../flows/flow-source-discovery.js';
-import { getGlobalExportFlows, getPlatformDefinition } from '../platforms.js';
+import { getApplicableFlows } from './strategies/helpers/flow-helpers.js';
 import type { FlowContext } from '../../types/flows.js';
+import {
+  detectFormatFromDirectory,
+  detectFormatWithContextFromDirectory
+} from './helpers/format-detection.js';
+import {
+  logInstallationResult
+} from './helpers/result-logging.js';
+import {
+  aggregateFlowResults
+} from './helpers/result-aggregation.js';
+import {
+  trackTargetFiles,
+  generateConflictReports
+} from './helpers/conflict-detection.js';
 
 // Re-export types for backward compatibility
 export type {
@@ -86,15 +97,7 @@ export async function installPackageWithFlows(
     
     // Phase 1: Get or detect package format
     const packageFormat = installContext.packageFormat || 
-      await detectPackageFormatFromDirectory(packageRoot);
-    
-    logger.info('Package format determination', {
-      providedFormat: installContext.packageFormat ? 'yes' : 'no',
-      providedType: installContext.packageFormat?.type,
-      providedPlatform: installContext.packageFormat?.platform,
-      finalType: packageFormat.type,
-      finalPlatform: packageFormat.platform
-    });
+      await detectFormatFromDirectory(packageRoot);
     
     logger.debug('Package format', {
       package: packageName,
@@ -114,33 +117,8 @@ export async function installPackageWithFlows(
     const strategy = selectInstallStrategy(enrichedContext, options);
     const strategyResult = await strategy.install(enrichedContext, options);
     
-    // Log results
-    if (strategyResult.filesProcessed > 0) {
-      logger.info(
-        `Processed ${strategyResult.filesProcessed} files for ${packageName} on platform ${platform}` +
-        (dryRun ? ' (dry run)' : `, wrote ${strategyResult.filesWritten} files`)
-      );
-    }
-    
-    // Log conflicts
-    if (strategyResult.conflicts.length > 0) {
-      logger.warn(`Detected ${strategyResult.conflicts.length} conflicts during installation`);
-      for (const conflict of strategyResult.conflicts) {
-        const winner = conflict.packages.find(p => p.chosen);
-        logger.warn(
-          `  ${toTildePath(conflict.targetPath)}: ${winner?.packageName} (priority ${winner?.priority}) overwrites ` +
-          `${conflict.packages.find(p => !p.chosen)?.packageName}`
-        );
-      }
-    }
-    
-    // Log errors
-    if (strategyResult.errors.length > 0) {
-      logger.error(`Encountered ${strategyResult.errors.length} errors during installation`);
-      for (const error of strategyResult.errors) {
-        logger.error(`  ${error.sourcePath}: ${error.message}`);
-      }
-    }
+    // Log results using shared utility
+    logInstallationResult(strategyResult, packageName, platform, dryRun ?? false);
     
     return strategyResult;
     
@@ -200,6 +178,10 @@ export async function installPackagesWithFlows(
   
   // Install each package
   for (const pkg of sortedPackages) {
+    // Detect package format and create conversion context using shared utility
+    const { format, context: conversionContext } = 
+      await detectFormatWithContextFromDirectory(pkg.packageRoot);
+    
     const installContext: FlowInstallContext = {
       packageName: pkg.packageName,
       packageRoot: pkg.packageRoot,
@@ -207,10 +189,12 @@ export async function installPackagesWithFlows(
       platform,
       packageVersion: pkg.packageVersion,
       priority: pkg.priority,
-      dryRun
+      dryRun,
+      packageFormat: format,
+      conversionContext
     };
     
-    // Get flows and discover target files to track conflicts
+    // Get flows and track conflicts using shared utility
     const flows = getApplicableFlows(platform, workspaceRoot);
     const flowContext: FlowContext = {
       workspaceRoot,
@@ -227,63 +211,25 @@ export async function installPackagesWithFlows(
       dryRun
     };
     
-    // Discover target paths for this package
-    const flowSources = await discoverFlowSources(flows, pkg.packageRoot, flowContext);
-    for (const [flow, sources] of flowSources) {
-      if (sources.length > 0) {
-        // Determine target path from flow
-        const targetPath = typeof flow.to === 'string' 
-          ? resolvePattern(flow.to, flowContext)
-          : Object.keys(flow.to)[0];
-        
-        // Track this package writing to this target
-        if (!fileTargets.has(targetPath)) {
-          fileTargets.set(targetPath, []);
-        }
-        fileTargets.get(targetPath)!.push({
-          packageName: pkg.packageName,
-          priority: pkg.priority
-        });
-      }
-    }
+    // Track target files for conflict detection
+    await trackTargetFiles(
+      fileTargets,
+      pkg.packageName,
+      pkg.priority,
+      pkg.packageRoot,
+      flows,
+      flowContext
+    );
     
     const result = await installPackageWithFlows(installContext, options);
     
-    // Aggregate results
-    aggregatedResult.filesProcessed += result.filesProcessed;
-    aggregatedResult.filesWritten += result.filesWritten;
-    aggregatedResult.errors.push(...result.errors);
-    aggregatedResult.targetPaths.push(...(result.targetPaths ?? []));
-    
-    // Merge file mappings
-    for (const [source, targets] of Object.entries(result.fileMapping ?? {})) {
-      const existing = aggregatedResult.fileMapping[source] ?? [];
-      aggregatedResult.fileMapping[source] = Array.from(new Set([...existing, ...targets])).sort();
-    }
-    
-    if (!result.success) {
-      aggregatedResult.success = false;
-    }
+    // Aggregate results using shared utility
+    aggregateFlowResults(aggregatedResult, result);
   }
   
-  // Detect conflicts: files written by multiple packages
-  for (const [targetPath, writers] of fileTargets) {
-    if (writers.length > 1) {
-      // Sort by priority to determine winner
-      const sortedWriters = [...writers].sort((a, b) => b.priority - a.priority);
-      const winner = sortedWriters[0];
-      
-      aggregatedResult.conflicts.push({
-        targetPath,
-        packages: sortedWriters.map((w, i) => ({
-          packageName: w.packageName,
-          priority: w.priority,
-          chosen: i === 0
-        })),
-        message: `Conflict in ${targetPath}: ${winner.packageName} (priority ${winner.priority}) overwrites ${sortedWriters.slice(1).map(w => w.packageName).join(', ')}`
-      });
-    }
-  }
+  // Generate conflict reports using shared utility
+  const detectedConflicts = generateConflictReports(fileTargets);
+  aggregatedResult.conflicts.push(...detectedConflicts);
   
   return aggregatedResult;
 }
@@ -291,55 +237,6 @@ export async function installPackagesWithFlows(
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Get applicable flows for a platform, including global flows
- */
-function getApplicableFlows(platform: Platform, cwd: string) {
-  const flows = [];
-  
-  const globalExportFlows = getGlobalExportFlows(cwd);
-  if (globalExportFlows && globalExportFlows.length > 0) {
-    flows.push(...globalExportFlows);
-  }
-  
-  const definition = getPlatformDefinition(platform, cwd);
-  if (definition.export && definition.export.length > 0) {
-    flows.push(...definition.export);
-  }
-  
-  return flows;
-}
-
-/**
- * Detect package format from directory by reading files
- */
-async function detectPackageFormatFromDirectory(packageRoot: string) {
-  const files: Array<{ path: string; content: string }> = [];
-  
-  try {
-    for await (const fullPath of walkFiles(packageRoot)) {
-      const relativePath = relative(packageRoot, fullPath);
-      
-      // Skip git metadata
-      if (relativePath.startsWith('.git/') || relativePath === '.git') {
-        continue;
-      }
-      
-      files.push({
-        path: relativePath,
-        content: ''
-      });
-    }
-  } catch (error) {
-    logger.error('Failed to read package directory for format detection', { 
-      packageRoot, 
-      error 
-    });
-  }
-  
-  return detectPackageFormat(files);
-}
 
 /**
  * Check if a file should be processed with flows

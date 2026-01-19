@@ -60,10 +60,10 @@ export class PackageManager {
     
     // Check if this is a cached transformed plugin
     if (version) {
-      const cachedPlugin = getTransformedPlugin(packageName, version);
-      if (cachedPlugin) {
+      const cachedPluginWithContext = getTransformedPlugin(packageName, version);
+      if (cachedPluginWithContext) {
         logger.debug(`Using cached transformed plugin: ${packageName}@${version}`);
-        return cachedPlugin;
+        return cachedPluginWithContext.package;
       }
     }
     
