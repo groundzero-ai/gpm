@@ -251,11 +251,12 @@
             "$pipeline": {
               "field": "model",
               "operations": [
-                // Check if it's an Anthropic model, otherwise set to "inherit"
-                { "$replace": { "pattern": "^(?!anthropic/).*$", "with": "inherit" } },
-                // Remove anthropic/ prefix
+                // Step 1: For non-Anthropic providers (openai/, google/, etc.), set to "inherit"
+                // But preserve Claude shorthand names (opus, sonnet, haiku) and full claude- model IDs
+                { "$replace": { "pattern": "^(?!anthropic/|claude-|opus$|sonnet$|haiku$).*/.+$", "with": "inherit" } },
+                // Step 2: Remove anthropic/ prefix
                 { "$replace": { "pattern": "^anthropic/", "with": "" } },
-                // Convert version dots to hyphens: claude-sonnet-4.20250514 → claude-sonnet-4-20250514
+                // Step 3: Convert version dots to hyphens: claude-sonnet-4.20250514 → claude-sonnet-4-20250514
                 { "$replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
               ]
             }
@@ -283,6 +284,7 @@
           },
           
           // 4. Smart map permissions object → permissionMode string
+          // Only transform if permissions field exists
           {
             "$switch": {
               "field": "permissions",
@@ -332,8 +334,7 @@
                   "pattern": { "edit": "ask" }, 
                   "value": "default" 
                 }
-              ],
-              "default": "default"
+              ]
             }
           },
           { "$rename": { "permissions": "permissionMode" } }
@@ -418,6 +419,7 @@
           },
           
           // 4. Transform permissionMode → permissions object (best effort)
+          // Only transform if permissionMode field exists
           {
             "$switch": {
               "field": "permissionMode",
@@ -427,8 +429,7 @@
                 { "pattern": "plan", "value": { "edit": "deny", "bash": "deny" } },
                 { "pattern": "dontAsk", "value": { "edit": "deny", "bash": "ask" } },
                 { "pattern": "default", "value": { "edit": "ask", "bash": "ask" } }
-              ],
-              "default": { "edit": "ask", "bash": "ask" }
+              ]
             }
           },
           { "$rename": { "permissionMode": "permissions" } }

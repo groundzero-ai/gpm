@@ -52,6 +52,12 @@ export function executePipeline(
     // Single field mode
     let value = getNestedValue(result, field);
 
+    // If field doesn't exist (undefined), don't apply transformations
+    // This prevents creating fields that weren't in the original document
+    if (value === undefined) {
+      return result;
+    }
+
     for (const step of operations) {
       value = applyPipelineStep(value, step, context);
     }
