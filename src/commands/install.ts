@@ -186,7 +186,7 @@ async function runBulkInstall(contexts: InstallationContext[]): Promise<CommandR
     return { success: true, data: { installed: 0, skipped: 0 } };
   }
   
-  console.log(`\n✓ Installing ${contexts.length} package${contexts.length === 1 ? '' : 's'} from openpackage.yml\n`);
+  console.log(`✓ Installing ${contexts.length} package${contexts.length === 1 ? '' : 's'} from openpackage.yml`);
   
   let totalInstalled = 0;
   let totalSkipped = 0;
@@ -199,7 +199,6 @@ async function runBulkInstall(contexts: InstallationContext[]): Promise<CommandR
       if (result.success) {
         totalInstalled++;
         results.push({ name: ctx.source.packageName, success: true });
-        console.log(`✓ ${ctx.source.packageName}`);
       } else {
         totalSkipped++;
         results.push({ name: ctx.source.packageName, success: false, error: result.error });
@@ -213,7 +212,7 @@ async function runBulkInstall(contexts: InstallationContext[]): Promise<CommandR
   }
   
   // Display summary
-  console.log(`\n✓ Installation complete: ${totalInstalled} installed${totalSkipped > 0 ? `, ${totalSkipped} failed` : ''}`);
+  console.log(`✓ Installation complete: ${totalInstalled} installed${totalSkipped > 0 ? `, ${totalSkipped} failed` : ''}`);
   
   const allSuccessful = totalSkipped === 0;
   return {

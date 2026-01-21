@@ -540,7 +540,7 @@ export async function resolveDependencies(
               let warningMessage = `Package '${packageName}' exists in registry but version '${versionDisplay}' is not available\n\n`;
 
               if (dependencyChain.length > 0) {
-                warningMessage += `📋 Dependency chain:\n`;
+                warningMessage += `✓ Dependency chain:\n`;
                 for (let i = 0; i < dependencyChain.length; i++) {
                   const indent = '  '.repeat(i);
                   warningMessage += `${indent}└─ ${dependencyChain[i]}\n`;

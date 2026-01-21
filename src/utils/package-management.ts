@@ -53,13 +53,13 @@ export async function createWorkspacePackageYml(cwd: string, force: boolean = fa
     }
     await writePackageYml(packageYmlPath, basicPackageYml);
     logger.info(`Overwrote basic openpackage.yml with name: ${projectName}`);
-    console.log(`📋 Overwrote basic openpackage.yml in .openpackage/ with name: ${projectName}`);
+    console.log(`✓ Overwrote basic openpackage.yml in .openpackage/ with name: ${projectName}`);
     return basicPackageYml;
   }
 
   await writePackageYml(packageYmlPath, basicPackageYml);
   logger.info(`Initialized workspace openpackage.yml`);
-  console.log(`📋 Initialized workspace openpackage.yml in .openpackage/`);
+  console.log(`✓ Initialized workspace openpackage.yml in .openpackage/`);
   return basicPackageYml;
 }
 
