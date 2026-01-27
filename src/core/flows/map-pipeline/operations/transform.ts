@@ -52,6 +52,12 @@ export function executePipeline(
     // Single field mode
     let value = getNestedValue(result, field);
 
+    // If field doesn't exist (undefined), don't apply transformations
+    // This prevents creating fields that weren't in the original document
+    if (value === undefined) {
+      return result;
+    }
+
     for (const step of operations) {
       value = applyPipelineStep(value, step, context);
     }
@@ -214,15 +220,19 @@ function applyArrayToObject(value: any, config: { value: any }, context: MapCont
 }
 
 /**
- * $map step (matches MongoDB $map)
+ * $map step (inspired by MongoDB $map)
  * Transform each element in array
  * 
  * Examples:
- * - { "$map": { "each": "capitalize" } }
+ * - { "$map": { "each": "capitalize" } }        // String transformation
  * - { "$map": { "each": "uppercase" } }
  * - { "$map": { "each": "lowercase" } }
+ * - { "$map": { "replace": { "old": "new" } } } // Value replacement using lookup table
  */
-function applyMap(value: any, config: { each: 'capitalize' | 'uppercase' | 'lowercase' }): any {
+function applyMap(
+  value: any, 
+  config: { each?: 'capitalize' | 'uppercase' | 'lowercase'; replace?: Record<string, string> }
+): any {
   if (!Array.isArray(value)) {
     return value;
   }
@@ -232,16 +242,27 @@ function applyMap(value: any, config: { each: 'capitalize' | 'uppercase' | 'lowe
       return item;
     }
 
-    switch (config.each) {
-      case 'capitalize':
-        return item.charAt(0).toUpperCase() + item.slice(1);
-      case 'uppercase':
-        return item.toUpperCase();
-      case 'lowercase':
-        return item.toLowerCase();
-      default:
-        return item;
+    // Replace mode: lookup-based value replacement
+    if (config.replace) {
+      return config.replace[item] || item;  // Return mapped value or original if not found
     }
+
+    // Each mode: string transformation
+    if (config.each) {
+      switch (config.each) {
+        case 'capitalize':
+          return item.charAt(0).toUpperCase() + item.slice(1);
+        case 'uppercase':
+          return item.toUpperCase();
+        case 'lowercase':
+          return item.toLowerCase();
+        default:
+          return item;
+      }
+    }
+
+    // No transformation specified
+    return item;
   });
 }
 
@@ -543,14 +564,30 @@ export function validatePipeline(operation: PipelineOperation): { valid: boolean
       const config = (step as any).$map;
       if (!config || typeof config !== 'object') {
         errors.push(`$pipeline.operations[${i}].$map must be an object`);
-      } else if (!config.each) {
-        errors.push(`$pipeline.operations[${i}].$map must have an 'each' property`);
       } else {
-        const validMaps = ['capitalize', 'uppercase', 'lowercase'];
-        if (!validMaps.includes(config.each)) {
-          errors.push(
-            `$pipeline.operations[${i}].$map.each must be one of: ${validMaps.join(', ')}`
-          );
+        const hasEach = 'each' in config;
+        const hasReplace = 'replace' in config;
+        
+        // Must have either 'each' or 'replace', but not both
+        if (!hasEach && !hasReplace) {
+          errors.push(`$pipeline.operations[${i}].$map must have either 'each' or 'replace' property`);
+        } else if (hasEach && hasReplace) {
+          errors.push(`$pipeline.operations[${i}].$map cannot have both 'each' and 'replace' properties`);
+        } else if (hasEach) {
+          // Validate 'each' mode (string transformations)
+          const validMaps = ['capitalize', 'uppercase', 'lowercase'];
+          if (!validMaps.includes(config.each)) {
+            errors.push(
+              `$pipeline.operations[${i}].$map.each must be one of: ${validMaps.join(', ')}`
+            );
+          }
+        } else if (hasReplace) {
+          // Validate 'replace' mode (lookup table)
+          if (typeof config.replace !== 'object' || config.replace === null || Array.isArray(config.replace)) {
+            errors.push(`$pipeline.operations[${i}].$map.replace must be an object (lookup table)`);
+          } else if (Object.keys(config.replace).length === 0) {
+            errors.push(`$pipeline.operations[${i}].$map.replace must have at least one mapping`);
+          }
         }
       }
     }

@@ -10,12 +10,12 @@ import { applyRootFileRemovals, computeRootFileRemovalPlan } from '../../utils/r
 import { exists, remove, walkFiles } from '../../utils/fs.js';
 import { isDirKey } from '../../utils/package-index-yml.js';
 import { removePackageFromOpenpackageYml } from '../../utils/package-management.js';
-import { getAllPlatformDirs } from '../../utils/platform-utils.js';
 import { getPlatformRootFileNames } from '../../utils/platform-root-files.js';
 import { getAllPlatforms } from '../platforms.js';
 import { logger } from '../../utils/logger.js';
 import { removeFileMapping } from './flow-aware-uninstaller.js';
 import { getTargetPath } from '../../utils/workspace-index-helpers.js';
+import { buildPreservedDirectoriesSet } from '../../utils/directory-preservation.js';
 import type { WorkspaceIndexFileMapping } from '../../types/workspace-index.js';
 
 interface FileRemoval {
@@ -71,31 +71,63 @@ async function expandFilesFromIndex(
   });
 }
 
+/**
+ * Clean up empty parent directories after file deletion.
+ * 
+ * Walks up the directory tree from each deleted file, removing empty directories
+ * until hitting a preserved directory (platform root) or the workspace root.
+ * 
+ * For platform files (e.g., .cursor/commands/essentials/file.md):
+ * - Removes empty subdirectories (essentials/, commands/)
+ * - Stops at and preserves the platform root (.cursor/)
+ * 
+ * For root files (e.g., docs/guides/file.md):
+ * - Removes all empty parent directories
+ * - Stops only at workspace root
+ * 
+ * @param cwd - Workspace root directory
+ * @param deletedPaths - Absolute paths of deleted files
+ * @param preservedDirs - Set of absolute directory paths to preserve (never remove)
+ */
 async function cleanupEmptyParents(
   cwd: string,
   deletedPaths: string[],
-  platformRoots: Set<string>
+  preservedDirs: Set<string>
 ): Promise<void> {
-  const parents = new Set<string>();
+  const candidateDirs = new Set<string>();
 
-  for (const p of deletedPaths) {
-    let current = path.dirname(p);
+  // Collect all parent directories from deleted files
+  for (const deletedPath of deletedPaths) {
+    let current = path.dirname(deletedPath);
+    
+    // Walk up the directory tree
     while (current.startsWith(cwd) && current !== cwd) {
-      if (platformRoots.has(current)) break;
-      parents.add(current);
+      // Stop at preserved directories (platform roots)
+      if (preservedDirs.has(current)) {
+        break;
+      }
+      
+      candidateDirs.add(current);
       current = path.dirname(current);
     }
   }
 
-  const sorted = Array.from(parents).sort((a, b) => b.length - a.length);
+  // Sort by depth (deepest first) to ensure we process child directories before parents
+  const sorted = Array.from(candidateDirs).sort((a, b) => b.length - a.length);
+  
+  // Remove empty directories
   for (const dir of sorted) {
     try {
       const entries = await readdir(dir);
-      if (entries.length === 0 && !(platformRoots.has(dir))) {
+      
+      // Only remove if directory is empty and not preserved
+      if (entries.length === 0 && !preservedDirs.has(dir)) {
         await remove(dir);
+        logger.debug(`Removed empty directory: ${path.relative(cwd, dir)}`);
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      // Ignore errors (directory may not exist, permission issues, etc.)
+      logger.debug(`Could not process directory ${dir}: ${error}`);
     }
   }
 }
@@ -169,9 +201,11 @@ export async function runUninstallPipeline(
   // Update openpackage.yml
   await removePackageFromOpenpackageYml(cwd, packageName);
 
-  // Cleanup empty dirs (avoid platform roots)
-  const platformRoots = new Set(getAllPlatformDirs().map(dir => path.join(cwd, dir)));
-  await cleanupEmptyParents(cwd, deleted, platformRoots);
+  // Cleanup empty directories (preserve platform roots from detection patterns)
+  const preservedDirs = buildPreservedDirectoriesSet(cwd);
+  // Convert relative paths to absolute paths for cleanup
+  const deletedAbsolutePaths = deleted.map(relativePath => path.join(cwd, relativePath));
+  await cleanupEmptyParents(cwd, deletedAbsolutePaths, preservedDirs);
 
   logger.info(`Uninstalled ${packageName}: removed ${deleted.length} files, updated ${updated.length} merged files`);
 

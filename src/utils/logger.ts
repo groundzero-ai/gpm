@@ -23,7 +23,14 @@ class ConsoleLogger implements Logger {
     let formatted = `${timestamp} ${prefix} ${message}`;
     
     if (meta && typeof meta === 'object') {
-      formatted += `\n${JSON.stringify(meta, null, 2)}`;
+      // Handle Error objects specifically since JSON.stringify(new Error()) is {}
+      const metaToLog = meta instanceof Error ? {
+        ...meta,
+        name: meta.name,
+        message: meta.message,
+        stack: meta.stack
+      } : meta;
+      formatted += `\n${JSON.stringify(metaToLog, null, 2)}`;
     } else if (meta) {
       formatted += ` ${meta}`;
     }

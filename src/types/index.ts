@@ -7,6 +7,7 @@ import type { Platform } from '../core/platforms.js';
 // Re-export flow types
 export * from './flows.js';
 export * from './platform-flows.js';
+export * from './conversion-context.js';
 
 // Core application types
 export interface OpenPackageDirectories {
@@ -153,11 +154,13 @@ export interface InstallOptions {
   conflictStrategy?: 'ask' | 'keep-both' | 'overwrite' | 'skip';
   conflictDecisions?: Record<string, 'keep-both' | 'overwrite' | 'skip'>;
   resolutionMode?: 'default' | 'remote-primary' | 'local-only';
+  global?: boolean;
 }
 
 export interface UninstallOptions {
   dryRun?: boolean;
   recursive?: boolean;
+  global?: boolean;
 }
 
 export interface PushOptions {

@@ -1,4 +1,5 @@
-import { extname } from 'path';
+import { extname, basename, dirname } from 'path';
+import { stripPlatformSuffixFromFilename } from '../core/flows/platform-suffix-handler.js';
 
 function normalizeSlashPath(input: string): string {
   return input.replace(/\\/g, '/');
@@ -50,6 +51,7 @@ function extractTargetExtensionFromRecursiveSuffix(toSuffix: string): string | n
  * - Preserves nested subdirectories from the source.
  * - Prevents accidental duplication when the destination base overlaps the source prefix.
  * - Supports basic extension remapping (e.g. `** / *.md` -> `** / *.mdc`).
+ * - Strips platform suffixes from filenames (e.g. `read-specs.claude.md` -> `read-specs.md`).
  */
 export function resolveRecursiveGlobTargetRelativePath(
   sourceRelFromPackage: string,
@@ -100,6 +102,10 @@ export function resolveRecursiveGlobTargetRelativePath(
       }
     }
   }
+
+  // Strip platform suffix from filename (e.g. read-specs.claude.md -> read-specs.md)
+  // This must be done before constructing the final path
+  relativeSubpath = stripPlatformSuffixFromFilename(relativeSubpath);
 
   return toBase ? normalizeSlashPath(`${toBase}/${relativeSubpath}`) : normalizeSlashPath(relativeSubpath);
 }

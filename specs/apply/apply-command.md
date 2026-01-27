@@ -10,10 +10,14 @@ It is the standalone way to (re)materialize package content into the workspace p
 
 #### 2. Usage
 
-- Apply current/root package:
+- Apply workspace-level files and all installed packages:
   - `opkg apply`
+  - Applies workspace files from `.openpackage/` (if present) first, then applies all packages from the workspace index
 - Apply a specific package by name:
   - `opkg apply <package-name>`
+  - Can target the workspace package by using its name from `.openpackage/openpackage.yml`
+
+> **Workspace-level apply**: When no package name is specified, `opkg apply` operates on both the workspace package (`.openpackage/` directory) and all installed packages from `openpackage.index.yml`. This ensures project-specific content and dependencies stay in sync with their sources.
 
 > Package resolution follows the same context detection rules as other pipelines: if `<package-name>` matches the root package, apply targets the root package; otherwise it targets a nested package when found.
 

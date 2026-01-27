@@ -179,6 +179,11 @@ export async function* walkFiles(dirPath: string, includePatterns: string[] = []
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     
     for (const entry of entries) {
+      // Filter out junk files like .DS_Store, Thumbs.db, etc.
+      if (isJunk(entry.name)) {
+        continue;
+      }
+      
       const fullPath = join(dirPath, entry.name);
       const relativePath = relative(process.cwd(), fullPath);
       

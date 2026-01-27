@@ -53,13 +53,13 @@ export async function createWorkspacePackageYml(cwd: string, force: boolean = fa
     }
     await writePackageYml(packageYmlPath, basicPackageYml);
     logger.info(`Overwrote basic openpackage.yml with name: ${projectName}`);
-    console.log(`📋 Overwrote basic openpackage.yml in .openpackage/ with name: ${projectName}`);
+    console.log(`✓ Overwrote basic openpackage.yml in .openpackage/ with name: ${projectName}`);
     return basicPackageYml;
   }
 
   await writePackageYml(packageYmlPath, basicPackageYml);
   logger.info(`Initialized workspace openpackage.yml`);
-  console.log(`📋 Initialized workspace openpackage.yml in .openpackage/`);
+  console.log(`✓ Initialized workspace openpackage.yml in .openpackage/`);
   return basicPackageYml;
 }
 
@@ -179,6 +179,14 @@ export async function addPackageToYml(
   }
   
   const config = await parsePackageYml(packageYmlPath);
+  
+  // Don't add the workspace package to its own manifest
+  // Check if the package name matches the workspace manifest name
+  const workspacePackageName = config.name;
+  if (workspacePackageName && arePackageNamesEquivalent(packageName, workspacePackageName)) {
+    logger.debug(`Skipping manifest update: package '${packageName}' is the workspace package itself`);
+    return;
+  }
   if (!config.packages) config.packages = [];
   if (!config[DEPENDENCY_ARRAYS.DEV_PACKAGES]) config[DEPENDENCY_ARRAYS.DEV_PACKAGES] = [];
 

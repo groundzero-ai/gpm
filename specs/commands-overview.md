@@ -7,8 +7,8 @@ This file provides high-level semantics for core commands in the path-based mode
 | Command | Direction | Purpose | Mutable Source | Immutable Source |
 |---------|-----------|---------|----------------|------------------|
 | `new` | N/A | Create package manifest | N/A | N/A |
-| `add` | Filesystem → Source | Add new files (source-only) | ✅ | ❌ Error |
-| `remove` | Source → Deletion | Remove files from source (source-only) | ✅ | ❌ Error |
+| `add` | Filesystem → Source | Add new files (source-only, path-only for workspace root) | ✅ | ❌ Error |
+| `remove` | Source → Deletion | Remove files from source (source-only, path-only for workspace root) | ✅ | ❌ Error |
 | `save` | Workspace → Source | Sync edits back (requires install) | ✅ | ❌ Error |
 | `set` | N/A | Update manifest metadata | ✅ | ❌ Error |
 | `pack` | Source → Registry | Create immutable snapshot | ✅ | N/A |
@@ -49,16 +49,20 @@ Add new files from anywhere to mutable source (workspace or global packages).
 
 ### `remove`
 
-Remove files from mutable source.
+Remove files from mutable source or workspace root.
 
-- Preconditions: Mutable source; fails on registry.
-- Flow: Resolve source → Collect files → Confirm → Delete → Clean up empty dirs.
+- Preconditions: Mutable source or workspace root; fails on registry.
+- Flow: Resolve arguments → Resolve source → Collect files → Confirm → Delete → Clean up empty dirs.
+- **Argument modes**: 
+  - Two-arg: `opkg remove <pkg> <path>` (named package)
+  - One-arg: `opkg remove <path>` (workspace root)
 - **No index updates**: `remove` only modifies package source. To sync deletions to workspace, use `apply` or `--apply` flag.
 - Options: `--apply` (sync to workspace immediately; requires package to be installed in current workspace), `--force` (skip confirmation), `--dry-run` (preview).
 - Example:
-  - `opkg remove my-pkg commands/deprecated.md` (source-only)
+  - `opkg remove commands/deprecated.md` (workspace root, path-only)
+  - `opkg remove my-pkg commands/deprecated.md` (named package, source-only)
   - `opkg remove my-pkg rules/old/ --apply` (source + workspace sync)
-  - `opkg remove my-pkg commands/ --dry-run` (preview)
+  - `opkg remove commands/ --dry-run` (preview workspace root)
 - Works from any directory with any mutable package.
 - Opposite of `add` command.
 - See [Remove](remove/).
@@ -105,8 +109,10 @@ Resolve/install from registry/git/path to workspace.
 - Partial via `files:` supported.
 - **Claude Code plugin support**: Automatically detects and transforms plugins from git sources (individual plugins or marketplaces with interactive selection).
 - Subdirectory support: `git:url#ref&subdirectory=path` for monorepos and plugin marketplaces.
+- **Global mode**: `-g, --global` installs to home directory (`~/`) instead of current workspace.
 - Example: 
   - `opkg install community-pkg@^1.0.0` (registry)
+  - `opkg install -g shared-rules` (global install)
   - `opkg install github:anthropics/claude-code#subdirectory=plugins/commit-commands` (plugin)
   - `opkg install github:anthropics/claude-code` (marketplace with interactive selection)
 - See [Install](install/).
@@ -124,7 +130,10 @@ Check package states.
 Remove package from workspace.
 
 - Flow: Read index → Delete mapped files (not source) → Remove sections from root files → Update index/yml.
-- Example: `opkg uninstall my-pkg`.
+- **Global mode**: `-g, --global` uninstalls from home directory (`~/`) instead of current workspace.
+- Example: 
+  - `opkg uninstall my-pkg` (workspace)
+  - `opkg uninstall -g shared-rules` (global)
 - See [Uninstall](uninstall/).
 
 ### `show`

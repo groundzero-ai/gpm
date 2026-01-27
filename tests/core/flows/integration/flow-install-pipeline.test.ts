@@ -15,11 +15,11 @@ import {
   installPackageWithFlows, 
   installPackagesWithFlows,
   type FlowInstallContext 
-} from '../../../../../src/core/install/flow-based-installer.js';
-import { clearPlatformsCache } from '../../../../../src/core/platforms.js';
-import { installPackageByIndexWithFlows } from '../../../../../src/utils/flow-index-installer.js';
-import { readWorkspaceIndex } from '../../../../../src/utils/workspace-index-yml.js';
-import { removeFileMapping } from '../../../../../src/core/uninstall/flow-aware-uninstaller.js';
+} from '../../../../src/core/install/flow-based-installer.js';
+import { clearPlatformsCache } from '../../../../src/core/platforms.js';
+import { installPackageByIndexWithFlows } from '../../../../src/utils/flow-index-installer.js';
+import { readWorkspaceIndex } from '../../../../src/utils/workspace-index-yml.js';
+import { removeFileMapping } from '../../../../src/core/uninstall/flow-aware-uninstaller.js';
 
 // ============================================================================
 // Test Setup

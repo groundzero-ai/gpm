@@ -51,6 +51,14 @@ export interface ResolvedPackage {
   conflictResolution?: 'kept' | 'overwritten' | 'skipped';
   requiredVersion?: string; // The version required by the parent package
   requiredRange?: string; // The version range required by the parent package
+  /**
+   * Marketplace source metadata for plugins defined in marketplace.json
+   */
+  marketplaceMetadata?: {
+    url: string;
+    commitSha: string;
+    pluginName: string;
+  };
 }
 
 /**
@@ -532,7 +540,7 @@ export async function resolveDependencies(
               let warningMessage = `Package '${packageName}' exists in registry but version '${versionDisplay}' is not available\n\n`;
 
               if (dependencyChain.length > 0) {
-                warningMessage += `📋 Dependency chain:\n`;
+                warningMessage += `✓ Dependency chain:\n`;
                 for (let i = 0; i < dependencyChain.length; i++) {
                   const indent = '  '.repeat(i);
                   warningMessage += `${indent}└─ ${dependencyChain[i]}\n`;
@@ -854,7 +862,7 @@ export function displayDependencyTree(resolvedPackages: ResolvedPackage[], silen
   const root = resolvedPackages.find(f => f.isRoot);
   if (!root) return;
   
-  console.log(`\n📦 Installing ${root.name}@${root.version} with dependencies:\n`);
+  console.log(`\n✓ Installing ${root.name}@${root.version} with dependencies:\n`);
   
   // Show root
   console.log(`${root.name}@${root.version} (root)`);

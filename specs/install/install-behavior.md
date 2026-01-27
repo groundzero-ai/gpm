@@ -9,7 +9,7 @@ This document defines the **user-facing behavior** of the `install` command, ass
 ---
 
 ## 0. Workspace Context
-The `install` command operates on the **workspace root** determined by the effective current working directory (`cwd` from shell or overridden by global `--cwd <dir>` flag; see [../../cli-options.md]). This affects:
+The `install` command operates on the **workspace root** determined by the effective current working directory (`cwd` from shell, overridden by global `--cwd <dir>` flag, or set to home directory `~/` via `--global` flag; see [../../cli-options.md]). This affects:
 - Detection of `openpackage.yml` (must exist at effective cwd for root package ops).
 - Target location for file installations:
   - **Universal content**: platform-mapped from package subdirs (e.g., `commands/`, `rules/`) to platform-specific locations (e.g., `.cursor/commands/`, `.opencode/commands/`).
@@ -19,6 +19,47 @@ The `install` command operates on the **workspace root** determined by the effec
 - **Package source discovery**: Searches workspace-local and global packages directories before falling back to registry.
 
 If no package detected at effective cwd, errors with "No package project found" (unless dry-run or flags allow).
+
+### 0.0.1 Global Installation Mode
+
+The `-g, --global` flag changes the installation target to the user's home directory:
+
+- **`opkg install -g <package>`** or **`opkg install --global <package>`**: Installs package files to `~/` instead of current workspace
+- **Behavior**:
+  - Platform files install to `~/.cursor/`, `~/.claude/`, `~/.opencode/`, etc.
+  - Root files install to `~/`
+  - `root/` directory files copy to `~/` with prefix stripped
+  - Creates/updates `~/openpackage.yml` for dependency tracking
+  - `-g, --global` **trumps** `--cwd` - if both specified, `--cwd` is ignored
+- **Use cases**:
+  - System-wide AI coding configurations
+  - Shared rules and commands across all projects
+  - Personal dotfiles management
+- **Examples**:
+  ```bash
+  # Install globally (shorthand)
+  opkg install -g shared-rules
+  
+  # Install globally (long form)
+  opkg install --global shared-rules
+  
+  # Install with specific platforms globally
+  opkg install -g cursor-config --platforms cursor,claude
+  
+  # Global flag overrides --cwd
+  opkg install -g my-package --cwd ./some-dir  # Installs to ~/, not ./some-dir
+  ```
+
+**User Feedback**:
+```
+📦 Installing to home directory: /Users/username
+
+✓ Selected local @shared-rules@1.0.0
+✓ Added files: 5
+   ├── .cursor/rules/style.md
+   ├── .claude/rules/testing.md
+   └── ...
+```
 
 ## 0.1 Package Source Resolution for Name-Based Install
 
@@ -130,7 +171,10 @@ packages:
 ## 1. Command shapes
 
 - **`opkg install`**
-  - **Meaning**: Materialize *all* dependencies declared in `openpackage.yml` into the workspace, at the **latest versions that satisfy their declared ranges**, using the **default local-first with remote-fallback policy** over local and remote registries (see §2 and `version-resolution.md`).
+  - **Meaning**: 
+    1. Install workspace-level files from `.openpackage/` directory (if present)
+    2. Materialize *all* dependencies declared in `openpackage.yml` into the workspace, at the **latest versions that satisfy their declared ranges**, using the **default local-first with remote-fallback policy** over local and remote registries (see §2 and `version-resolution.md`).
+  - **Workspace-level files**: Files in `.openpackage/commands/`, `.openpackage/rules/`, etc. are installed to platform directories (e.g., `.cursor/commands/`) using the workspace package name from `.openpackage/openpackage.yml`.
 
 - **`opkg install <name>`**
   - **Meaning**:
@@ -307,6 +351,78 @@ Other flags (`--dev`, `--remote`, `--platforms`, `--dry-run`, conflicts) keep th
   - This makes `opkg install` act as:
     - **“Hydrate my workspace to match `openpackage.yml`”** on first run.
     - **“Upgrade within my declared ranges”** on subsequent runs.
+
+### 4.1 Workspace-level install behavior
+
+When `opkg install` is run without package arguments:
+
+**Step 1: Install workspace-level files**
+
+If the `.openpackage/` directory contains installable content:
+- The workspace directory itself is treated as a package
+- Uses the `name` field from `.openpackage/openpackage.yml` (defaults to workspace directory name)
+- Files in universal subdirectories (`.openpackage/commands/`, `.openpackage/rules/`, etc.) are installed to detected platforms
+- Workspace package is recorded in `openpackage.index.yml` with `path: "./.openpackage"`
+- **Self-exclusion**: The workspace package name is automatically excluded from being added to its own `packages` array
+
+**Step 2: Install manifest dependencies**
+
+Then, all packages from `packages[]` and `dev-packages[]` are installed as normal.
+
+**Example:**
+
+Workspace structure:
+```
+myproject/
+├── .openpackage/
+│   ├── openpackage.yml          # name: myproject, version: 1.0.0
+│   ├── commands/
+│   │   └── cleanup.md
+│   └── rules/
+│       └── style.md
+├── openpackage.yml              # Same file, contains packages list
+```
+
+Running `opkg install`:
+```bash
+$ opkg install
+✓ Installing 2 packages from openpackage.yml
+
+✓ myproject (workspace)
+✓ Added files: 2
+   ├── .cursor/commands/cleanup.md
+   └── .cursor/rules/style.md
+
+✓ some-dependency@1.0.0
+✓ Added files: 5
+   ...
+
+✓ Installation complete: 2 installed
+```
+
+Result in `.openpackage/openpackage.index.yml`:
+```yaml
+packages:
+  myproject:
+    path: ./.openpackage
+    version: 1.0.0
+    files:
+      commands/cleanup.md:
+        - .cursor/commands/cleanup.md
+      rules/style.md:
+        - .cursor/rules/style.md
+  
+  some-dependency:
+    path: ~/.openpackage/packages/some-dependency
+    version: 1.0.0
+    files:
+      # ... other files
+```
+
+**Key behaviors:**
+- Workspace package name (`myproject`) is NOT added to `packages` array in `openpackage.yml`
+- Works seamlessly with existing platform detection and flow-based mapping
+- Both workspace and dependency installations are tracked in the index
 
 ---
 

@@ -71,7 +71,7 @@ describe('Platform Converter', () => {
       assert.strictEqual(pipeline.needsConversion, true);
       assert.ok(pipeline.stages.length > 0);
       assert.strictEqual(pipeline.stages[0].name, 'platform-to-universal');
-      assert.strictEqual(pipeline.stages[0].inverted, true);
+      assert.strictEqual(pipeline.stages[0].inverted, false);
     });
 
     it('should not build pipeline for matching formats', () => {
@@ -181,6 +181,57 @@ describe('Platform Converter', () => {
       assert.strictEqual(result.success, true);
       assert.ok(result.convertedPackage);
       assert.strictEqual(result.stages.length, 0);
+    });
+
+    it('should convert claude-plugin without retaining plugin manifest', async () => {
+      const converter = createPlatformConverter(workspaceRoot);
+
+      const pkg: Package = {
+        metadata: {
+          name: 'test-plugin',
+          version: '1.0.0'
+        },
+        files: [
+          {
+            path: '.claude-plugin/plugin.json',
+            content: '{"name":"test-plugin","version":"1.0.0"}',
+            encoding: 'utf8'
+          },
+          {
+            path: 'commands/test.md',
+            content: '# Test',
+            encoding: 'utf8'
+          }
+        ],
+        _format: {
+          type: 'platform-specific',
+          platform: 'claude-plugin',
+          confidence: 1.0,
+          analysis: {
+            universalFiles: 0,
+            platformSpecificFiles: 2,
+            detectedPlatforms: new Map([['claude-plugin', 2]]),
+            totalFiles: 2,
+            samplePaths: {
+              universal: [],
+              platformSpecific: ['.claude-plugin/plugin.json']
+            }
+          }
+        }
+      };
+
+      const result = await converter.convert(pkg, 'claude', { dryRun: true });
+
+      assert.strictEqual(result.success, true);
+      assert.ok(result.convertedPackage);
+
+      const paths = result.convertedPackage.files.map(f => f.path);
+      assert.ok(paths.includes('commands/test.md'), 'Should keep commands');
+      assert.ok(paths.includes('openpackage.yml'), 'Should create openpackage.yml');
+      assert.ok(
+        !paths.some(p => p.startsWith('.claude-plugin/')),
+        'Should not keep .claude-plugin files'
+      );
     });
   });
 

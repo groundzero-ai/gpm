@@ -345,5 +345,7 @@ public
 .openpackage/
 .cursor/
 .opencode/
+.claude/
+.kilocode/
 
 # End of .gitignore

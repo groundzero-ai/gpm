@@ -62,16 +62,20 @@ export function toTildePath(absolutePath: string, homeDir: string = os.homedir()
 }
 
 /**
- * Format a path for writing to workspace index.
- * Prefers workspace-relative paths (e.g., ./.openpackage/packages/name) when the source
- * lives under the workspace root. Otherwise, converts absolute paths under ~/.openpackage/
- * to tilde notation (e.g., ~/.openpackage/registry/...).
+ * Format a path for writing to YAML files (manifest or index).
+ * Provides consistent path representation across all workspace YAML files.
+ * 
+ * Priority:
+ * 1. Already relative or tilde notation → return as-is
+ * 2. Under workspace root → convert to workspace-relative (./path)
+ * 3. Under ~/.openpackage/ → convert to tilde notation (~/.openpackage/path)
+ * 4. Other absolute paths → return as-is
  * 
  * @param rawPath - The absolute or relative path to format
- * @param workspaceRoot - The workspace root directory
- * @returns Formatted path for workspace index
+ * @param workspaceRoot - The workspace root directory (defaults to process.cwd())
+ * @returns Formatted path suitable for YAML files
  */
-export function formatPathForWorkspaceIndex(rawPath: string, workspaceRoot: string): string {
+export function formatPathForYaml(rawPath: string, workspaceRoot: string = process.cwd()): string {
   // If already relative or tilde notation, return as-is
   if (!path.isAbsolute(rawPath)) {
     return rawPath;

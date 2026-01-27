@@ -5,19 +5,19 @@ import { ValidationError } from '../../utils/errors.js';
 import { getLocalOpenPackageDir, getLocalPackageYmlPath } from '../../utils/paths.js';
 import { readWorkspaceIndex } from '../../utils/workspace-index-yml.js';
 import { resolveDeclaredPath } from '../../utils/path-resolution.js';
-import { calculateFileHash } from '../../utils/hash-utils.js';
-import { exists, readTextFile, walkFiles } from '../../utils/fs.js';
-import { isDirKey } from '../../utils/package-index-yml.js';
+import { exists } from '../../utils/fs.js';
 import type { WorkspaceIndexPackage } from '../../types/workspace-index.js';
 import { logger } from '../../utils/logger.js';
 import { getTargetPath } from '../../utils/workspace-index-helpers.js';
+import { parsePackageYml } from '../../utils/package-yml.js';
+import { arePackageNamesEquivalent } from '../../utils/package-name.js';
 
-export type PackageSyncState = 'synced' | 'modified' | 'missing';
+export type PackageSyncState = 'synced' | 'partial' | 'missing';
 
-export interface StatusFileDiff {
-  sourcePath: string;
-  workspacePath: string;
-  reason: 'missing' | 'hash-mismatch';
+export interface StatusFileMapping {
+  source: string;
+  target: string;
+  exists: boolean;
 }
 
 export interface StatusPackageReport {
@@ -25,114 +25,88 @@ export interface StatusPackageReport {
   version?: string;
   path: string;
   state: PackageSyncState;
-  diffs: StatusFileDiff[];
+  totalFiles: number;
+  existingFiles: number;
+  fileList?: StatusFileMapping[];
 }
 
 export interface StatusPipelineResult {
   packages: StatusPackageReport[];
 }
 
-async function collectDirFiles(absDir: string, prefix: string): Promise<string[]> {
-  const files: string[] = [];
-  if (!(await exists(absDir))) return files;
-  for await (const filePath of walkFiles(absDir)) {
-    // Use path.relative instead of substring math so trailing slashes don't
-    // corrupt the first character of filenames.
-    const rel = path.relative(absDir, filePath).replace(/\\/g, '/');
-    files.push(path.posix.join(prefix, rel));
-  }
-  return files;
-}
-
-async function hashOrNull(absPath: string): Promise<string | null> {
-  if (!(await exists(absPath))) return null;
-  const content = await readTextFile(absPath);
-  return await calculateFileHash(content);
-}
-
-async function comparePackage(
+/**
+ * Check package status by verifying file existence
+ * Does not compare content - only checks if expected files exist
+ */
+async function checkPackageStatus(
   cwd: string,
   pkgName: string,
-  entry: WorkspaceIndexPackage
+  entry: WorkspaceIndexPackage,
+  includeFileList: boolean = false
 ): Promise<StatusPackageReport> {
   const resolved = resolveDeclaredPath(entry.path, cwd);
   const sourceRoot = resolved.absolute;
 
-  if (!(await exists(sourceRoot))) {
+  // Check if source path exists
+  const sourceExists = await exists(sourceRoot);
+  
+  if (!sourceExists) {
     return {
       name: pkgName,
       version: entry.version,
       path: entry.path,
       state: 'missing',
-      diffs: [
-        {
-          sourcePath: sourceRoot,
-          workspacePath: '',
-          reason: 'missing'
-        }
-      ]
+      totalFiles: 0,
+      existingFiles: 0,
+      fileList: includeFileList ? [] : undefined
     };
   }
 
-  const diffs: StatusFileDiff[] = [];
+  // Check workspace file existence
+  let totalFiles = 0;
+  let existingFiles = 0;
+  const fileList: StatusFileMapping[] = [];
+  
   const filesMapping = entry.files || {};
 
-  for (const [rawKey, targets] of Object.entries(filesMapping)) {
+  for (const [sourceKey, targets] of Object.entries(filesMapping)) {
     if (!Array.isArray(targets) || targets.length === 0) continue;
-    const isDir = isDirKey(rawKey);
-    if (isDir) {
-      const sourceDir = path.join(sourceRoot, rawKey);
-      const sourceFiles = await collectDirFiles(sourceDir, rawKey.replace(/\/$/, ''));
-      for (const rel of sourceFiles) {
-        for (const targetMapping of targets) {
-          const targetDir = getTargetPath(targetMapping);
-          const workspacePath = path.join(cwd, targetDir, rel.slice(rawKey.length));
-          const sourcePath = path.join(sourceRoot, rel);
-          const [sourceHash, workspaceHash] = await Promise.all([
-            hashOrNull(sourcePath),
-            hashOrNull(workspacePath)
-          ]);
-          if (!workspaceHash) {
-            diffs.push({ sourcePath, workspacePath, reason: 'missing' });
-            continue;
-          }
-          if (!sourceHash || sourceHash !== workspaceHash) {
-            diffs.push({ sourcePath, workspacePath, reason: 'hash-mismatch' });
-          }
-        }
+
+    for (const mapping of targets) {
+      const targetPath = getTargetPath(mapping);
+      const absPath = path.join(cwd, targetPath);
+      totalFiles++;
+      
+      const fileExists = await exists(absPath);
+      if (fileExists) {
+        existingFiles++;
       }
-    } else {
-      const sourcePath = path.join(sourceRoot, rawKey);
-      for (const targetMapping of targets) {
-        const targetPath = getTargetPath(targetMapping);
-        const workspacePath = path.join(cwd, targetPath);
-        const [sourceHash, workspaceHash] = await Promise.all([
-          hashOrNull(sourcePath),
-          hashOrNull(workspacePath)
-        ]);
-        if (!workspaceHash) {
-          diffs.push({ sourcePath, workspacePath, reason: 'missing' });
-          continue;
-        }
-        if (!sourceHash || sourceHash !== workspaceHash) {
-          diffs.push({ sourcePath, workspacePath, reason: 'hash-mismatch' });
-        }
+      
+      if (includeFileList) {
+        fileList.push({
+          source: sourceKey,
+          target: targetPath,
+          exists: fileExists
+        });
       }
     }
   }
 
-  const state: PackageSyncState = diffs.length === 0 ? 'synced' : 'modified';
+  // Classify package state
+  const state: PackageSyncState = existingFiles === totalFiles ? 'synced' : 'partial';
 
   return {
     name: pkgName,
     version: entry.version,
     path: entry.path,
     state,
-    diffs
+    totalFiles,
+    existingFiles,
+    fileList: includeFileList ? fileList : undefined
   };
 }
 
-export async function runStatusPipeline(): Promise<CommandResult<StatusPipelineResult>> {
+export async function runStatusPipeline(packageName?: string): Promise<CommandResult<StatusPipelineResult>> {
   const cwd = process.cwd();
   const openpkgDir = getLocalOpenPackageDir(cwd);
   const manifestPath = getLocalPackageYmlPath(cwd);
@@ -147,19 +121,63 @@ export async function runStatusPipeline(): Promise<CommandResult<StatusPipelineR
   const packages = index.packages || {};
   const reports: StatusPackageReport[] = [];
 
-  for (const [pkgName, pkgEntry] of Object.entries(packages)) {
+  // Get workspace package name to filter it out
+  let workspacePackageName: string | undefined;
+  try {
+    const config = await parsePackageYml(manifestPath);
+    workspacePackageName = config.name;
+  } catch (error) {
+    logger.warn(`Failed to read workspace manifest: ${error}`);
+  }
+
+  // If specific package requested, only check that one with file list
+  if (packageName) {
+    const pkgEntry = packages[packageName];
+    if (!pkgEntry) {
+      return {
+        success: true,
+        data: { packages: [] }
+      };
+    }
+
     try {
-      const report = await comparePackage(cwd, pkgName, pkgEntry);
+      const report = await checkPackageStatus(cwd, packageName, pkgEntry, true);
       reports.push(report);
     } catch (error) {
-      logger.warn(`Failed to compute status for ${pkgName}: ${error}`);
+      logger.warn(`Failed to compute status for ${packageName}: ${error}`);
       reports.push({
-        name: pkgName,
+        name: packageName,
         version: pkgEntry?.version,
         path: pkgEntry?.path ?? '',
         state: 'missing',
-        diffs: []
+        totalFiles: 0,
+        existingFiles: 0,
+        fileList: []
       });
+    }
+  } else {
+    // Otherwise check all packages without file list
+    for (const [pkgName, pkgEntry] of Object.entries(packages)) {
+      // Skip the workspace package itself
+      if (workspacePackageName && arePackageNamesEquivalent(pkgName, workspacePackageName)) {
+        logger.debug(`Skipping workspace package '${pkgName}' in status list`);
+        continue;
+      }
+
+      try {
+        const report = await checkPackageStatus(cwd, pkgName, pkgEntry, false);
+        reports.push(report);
+      } catch (error) {
+        logger.warn(`Failed to compute status for ${pkgName}: ${error}`);
+        reports.push({
+          name: pkgName,
+          version: pkgEntry?.version,
+          path: pkgEntry?.path ?? '',
+          state: 'missing',
+          totalFiles: 0,
+          existingFiles: 0
+        });
+      }
     }
   }
 

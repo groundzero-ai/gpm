@@ -9,9 +9,9 @@ export function setupRemoveCommand(program: Command): void {
   program
     .command('remove')
     .alias('rm')
-    .argument('<package-name>', 'package name')
-    .argument('<path>', 'file or directory to remove from package')
-    .description('Remove files from a mutable package source')
+    .argument('[package-name]', 'package name (optional - defaults to workspace package)')
+    .argument('[path]', 'file or directory to remove')
+    .description('Remove files from a mutable package source or workspace package')
     .option('--apply', 'Apply changes to workspace immediately (requires package to be installed)')
     .option('--force', 'Skip confirmation prompts')
     .option('--dry-run', 'Preview what would be removed without actually deleting')
@@ -30,10 +30,21 @@ export function setupRemoveCommand(program: Command): void {
           // Format the path for display using unified formatter
           const displayPath = formatPathForDisplay(sourcePath, cwd);
           
+          // Determine if this is a workspace root removal
+          const isWorkspaceRoot = displayPath.includes('.openpackage') && !displayPath.includes('.openpackage/packages');
+          
           if (options.dryRun) {
-            console.log(`\n(dry-run) Would remove ${filesRemoved} file${filesRemoved !== 1 ? 's' : ''} from ${resolvedName}`);
+            if (isWorkspaceRoot) {
+              console.log(`\n(dry-run) Would remove ${filesRemoved} file${filesRemoved !== 1 ? 's' : ''} from workspace package`);
+            } else {
+              console.log(`\n(dry-run) Would remove ${filesRemoved} file${filesRemoved !== 1 ? 's' : ''} from ${resolvedName}`);
+            }
           } else {
-            console.log(`\n✓ Removed ${filesRemoved} file${filesRemoved !== 1 ? 's' : ''} from ${resolvedName}`);
+            if (isWorkspaceRoot) {
+              console.log(`\n✓ Removed ${filesRemoved} file${filesRemoved !== 1 ? 's' : ''} from workspace package`);
+            } else {
+              console.log(`\n✓ Removed ${filesRemoved} file${filesRemoved !== 1 ? 's' : ''} from ${resolvedName}`);
+            }
           }
           
           console.log(`  Path: ${displayPath}`);
@@ -54,7 +65,7 @@ export function setupRemoveCommand(program: Command): void {
             }
           }
           
-          if (!options.apply && !options.dryRun) {
+          if (!options.apply && !options.dryRun && !isWorkspaceRoot) {
             // Check if package is installed in workspace
             const workspaceIndexRecord = await readWorkspaceIndex(cwd);
             const isInstalled = !!workspaceIndexRecord.index.packages[resolvedName];

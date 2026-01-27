@@ -8,8 +8,10 @@
 import { dirname } from 'path';
 import type { Platform } from '../platforms.js';
 import type { PackageFile } from '../../types/index.js';
+import type { PackageConversionContext } from '../../types/conversion-context.js';
 import { getAllPlatforms, isPlatformId } from '../platforms.js';
 import { logger } from '../../utils/logger.js';
+import { createContextFromFormat } from '../conversion-context/index.js';
 
 /**
  * Package format classification
@@ -34,18 +36,6 @@ export interface PackageFormat {
    * Detailed file analysis for debugging
    */
   analysis: FormatAnalysis;
-  
-  /**
-   * Special flag: if true, content is already in native format for the target platform
-   * (e.g., Claude plugin with Claude-format frontmatter)
-   * This means: copy files with path mapping but skip content transformations
-   */
-  isNativeFormat?: boolean;
-  
-  /**
-   * If isNativeFormat is true, which platform's format?
-   */
-  nativePlatform?: Platform;
 }
 
 export interface FormatAnalysis {
@@ -75,6 +65,7 @@ const UNIVERSAL_SUBDIRS = [
  */
 const PLATFORM_ROOT_DIRS: Record<string, Platform> = {
   '.claude': 'claude',
+  '.claude-plugin': 'claude-plugin',
   '.cursor': 'cursor',
   '.opencode': 'opencode',
   '.codex': 'codex',
@@ -94,6 +85,30 @@ const PLATFORM_ROOT_DIRS: Record<string, Platform> = {
  */
 export function detectPackageFormat(files: PackageFile[]): PackageFormat {
   logger.debug('Detecting package format', { fileCount: files.length });
+  
+  // Check for claude-plugin first (highest priority)
+  const hasClaudePluginManifest = files.some(f => 
+    f.path === '.claude-plugin/plugin.json'
+  );
+  
+  if (hasClaudePluginManifest) {
+    logger.debug('Detected Claude Code plugin format');
+    return {
+      type: 'platform-specific',
+      platform: 'claude-plugin',
+      confidence: 1.0,
+      analysis: {
+        universalFiles: 0,
+        platformSpecificFiles: files.length,
+        detectedPlatforms: new Map([['claude-plugin', files.length]]),
+        totalFiles: files.length,
+        samplePaths: {
+          universal: [],
+          platformSpecific: ['.claude-plugin/plugin.json']
+        }
+      }
+    };
+  }
   
   const analysis: FormatAnalysis = {
     universalFiles: 0,
@@ -291,37 +306,17 @@ export function needsConversion(
 }
 
 /**
- * Check if package should install with path mapping only (no content transformations)
- * This applies to native format packages where the content is already correct for the
- * target platform, but file paths need to be mapped (e.g., commands/ → .claude/commands/)
- */
-export function shouldUsePathMappingOnly(
-  format: PackageFormat,
-  targetPlatform: Platform
-): boolean {
-  // Native format for target platform: apply path mappings but skip content transforms
-  return (
-    format.isNativeFormat === true &&
-    format.nativePlatform === targetPlatform
-  );
-}
-
-/**
- * Check if package should install AS-IS (no transformations at all)
- * This is currently unused but kept for potential future use cases where
- * both structure AND content match exactly
+ * Detect package format and create conversion context
  * 
- * @deprecated Use shouldUsePathMappingOnly instead for most cases
+ * Convenience function that combines format detection with context creation.
+ * Use this at package loading time to get both format and context together.
  */
-export function shouldInstallDirectly(
-  format: PackageFormat,
-  targetPlatform: Platform
-): boolean {
-  // Platform-specific format matching target platform, but NOT native format
-  // (native format needs path mapping)
-  return (
-    format.type === 'platform-specific' &&
-    format.platform === targetPlatform &&
-    !format.isNativeFormat
-  );
+export function detectPackageFormatWithContext(files: PackageFile[]): {
+  format: PackageFormat;
+  context: PackageConversionContext;
+} {
+  const format = detectPackageFormat(files);
+  const context = createContextFromFormat(format);
+  
+  return { format, context };
 }

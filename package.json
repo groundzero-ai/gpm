@@ -1,6 +1,6 @@
 {
   "name": "opkg",
-  "version": "0.7.3",
+  "version": "0.7.8",
   "publishConfig": {
     "access": "public"
   },

@@ -28,6 +28,7 @@ import {
 } from '../utils/version-ranges.js';
 import { PACKAGE_PATHS, UNVERSIONED } from '../constants/index.js';
 import { getTransformedPlugin } from './install/plugin-transformer.js';
+import { loadPackageFromPath } from './install/path-package-loader.js';
 
 /**
  * Package management operations
@@ -60,10 +61,10 @@ export class PackageManager {
     
     // Check if this is a cached transformed plugin
     if (version) {
-      const cachedPlugin = getTransformedPlugin(packageName, version);
-      if (cachedPlugin) {
+      const cachedPluginWithContext = getTransformedPlugin(packageName, version);
+      if (cachedPluginWithContext) {
         logger.debug(`Using cached transformed plugin: ${packageName}@${version}`);
-        return cachedPlugin;
+        return cachedPluginWithContext.package;
       }
     }
     
@@ -109,21 +110,12 @@ export class PackageManager {
     }
     
     try {
-      // Load openpackage.yml for metadata
-      const packageYmlPath = join(packagePath, PACKAGE_PATHS.MANIFEST_RELATIVE);
-      if (!(await exists(packageYmlPath))) {
-        throw new PackageNotFoundError(packageName);
-      }
-      
-      const metadata = await parsePackageYml(packageYmlPath);
-      
-      // Discover all files in the package directory
-      const files = await this.discoverPackageFiles(packagePath);
-      
-      return { metadata, files };
+      // Use unified loader to handle both regular packages and plugins
+      const pkg = await loadPackageFromPath(packagePath, { packageName });
+      return pkg;
     } catch (error) {
-      if (error instanceof PackageNotFoundError) {
-        throw error;
+      if (error instanceof PackageNotFoundError || (error as any).name === 'ValidationError') {
+        throw new PackageNotFoundError(packageName);
       }
       logger.error(`Failed to load package: ${packageName}`, { error });
       throw new InvalidPackageError(`Failed to load package: ${error}`);

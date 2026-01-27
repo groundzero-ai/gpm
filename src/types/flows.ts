@@ -17,13 +17,13 @@ import type { MapPipeline } from '../core/flows/map-pipeline/types.js';
  */
 export interface Flow {
   /** 
-   * Source file pattern or array of patterns (supports glob patterns like *.md)
+   * Source file pattern, array of patterns, or switch expression (supports glob patterns like *.md)
    * When array is provided, first matching pattern is used (priority order)
    */
-  from: string | string[];
+  from: string | string[] | SwitchExpression;
 
-  /** Target path or multi-target configuration */
-  to: string | MultiTargetFlows;
+  /** Target path, multi-target configuration, or switch expression */
+  to: string | MultiTargetFlows | SwitchExpression;
 
   /** Map pipeline - MongoDB-inspired document transformations */
   map?: MapPipeline;
@@ -65,6 +65,34 @@ export interface Flow {
  */
 export interface MultiTargetFlows {
   [targetPath: string]: Partial<Flow>;
+}
+
+/**
+ * Switch expression for conditional target path resolution
+ * Inspired by MongoDB's $switch aggregation operator
+ */
+export interface SwitchExpression {
+  $switch: {
+    /** Context variable to evaluate (e.g., "$$targetRoot") */
+    field: string;
+    
+    /** Pattern cases to match (evaluated in order, first match wins) */
+    cases: SwitchCase[];
+    
+    /** Optional default value if no pattern matches */
+    default?: string;
+  };
+}
+
+/**
+ * Switch case for pattern matching
+ */
+export interface SwitchCase {
+  /** Pattern to match (string for equality/glob, object for shape matching) */
+  pattern: string | object;
+  
+  /** Target path to use if pattern matches */
+  value: string;
 }
 
 /**
@@ -127,6 +155,12 @@ export interface Condition {
 
   /** Key equals specific value */
   equals?: any;
+
+  /** Equality check: [left, right] - supports $$variables */
+  $eq?: [string, string];
+
+  /** Not equal check: [left, right] - supports $$variables */
+  $ne?: [string, string];
 
   /** All conditions must be true */
   and?: Condition[];
@@ -231,7 +265,7 @@ export interface FlowContext {
   /** Package name */
   packageName: string;
 
-  /** Custom variables for template substitution */
+  /** Custom variables for template substitution (includes 'source' and 'platform') */
   variables: Record<string, any>;
 
   /** Direction: install (package→workspace) or save (workspace→package) */

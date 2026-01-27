@@ -53,7 +53,9 @@ OpenPackage takes care of cross-platform conversions, config composition, and po
 
 ## How it works
 
-At its core, OpenPackage is a lightweight CLI tool for creating versioned, AI coding platform agnostic packages, each contaning sets of coding config files and specs for simplified installs, uninstalls, and distribution. It's basically Claude Code Plugins, but universal, more powerful, and open source.
+At its core, OpenPackage is a lightweight CLI tool for creating versioned, AI coding platform agnostic packages, each contaning sets of coding config files and specs for simplified installs, uninstalls, and distribution.  
+
+It's basically Claude Code Plugins, but universal, more powerful, and open source.
 
 1. Declare a package
 2. Add rules, commands, subagents, skills, mcp configs, specs, docs etc.
@@ -78,10 +80,26 @@ The install command supports various package sources:
 ```bash title="Terminal"
 opkg install essentials               # Local/remote registry
 opkg install ../packages/essentials/  # Local path
-opkg install git:https://github.com/enulus/awesome-openpackage.git                # GitHub package repo
-opkg install github:anthropics/claude-code                                        # GitHub Claude Code Plugins marketplace
-opkg install github:anthropics/claude-code#subdirectory=plugins/commit-commands   # GitHub Claude Code Plugin
+
+# GitHub package repo
+opkg install git:https://github.com/enulus/awesome-openpackage.git    
+
+# GitHub Claude Code Plugins marketplace          
+opkg install github:anthropics/claude-code
 ```  
+
+Use the `--global` (or `-g`) option to install files to user scope:
+```bash title="Terminal"
+# Installs to home dir, ex: ~/.cursor/, ~/.opencode/
+opkg install github:anthropics/claude-code -g
+```  
+
+### Show installed packages and files
+```bash title="Terminal"
+opkg status             # Lists packages installed to workspace at cwd
+opkg status <package>   # Lists installed files for specified package
+```  
+Use the status command to show an overview of packages and files installed.
 
 ### Uninstall packages
 ```bash title="Terminal"

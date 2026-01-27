@@ -33,6 +33,12 @@ export function executeSwitch(
   // Get current value
   const currentValue = getNestedValue(result, field);
 
+  // If field doesn't exist, don't apply any transformation
+  // This prevents creating fields that weren't in the original document
+  if (currentValue === undefined) {
+    return result;
+  }
+
   // Try each case in order (first match wins)
   for (const { pattern, value } of cases) {
     if (matchPattern(currentValue, pattern)) {
@@ -41,7 +47,7 @@ export function executeSwitch(
     }
   }
 
-  // No match - use default if provided
+  // No match - use default if provided (only when field exists)
   if (defaultValue !== undefined) {
     setNestedValue(result, field, defaultValue);
   }

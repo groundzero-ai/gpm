@@ -3,30 +3,36 @@ import { readTextFile, walkFiles } from '../../utils/fs.js';
 import { logger } from '../../utils/logger.js';
 import { ValidationError } from '../../utils/errors.js';
 import { isJunk } from 'junk';
-import type { Package, PackageFile, PackageYml } from '../../types/index.js';
+import type { Package, PackageFile, PackageYml, PackageWithContext } from '../../types/index.js';
 import { detectPackageFormat } from './format-detector.js';
-import { CLAUDE_PLUGIN_PATHS, DIR_PATTERNS } from '../../constants/index.js';
+import { DIR_PATTERNS } from '../../constants/index.js';
 import { generatePluginName } from '../../utils/plugin-naming.js';
+import { createPlatformContext } from '../conversion-context/index.js';
+import { resolvePluginMetadata, type ClaudePluginManifest } from './plugin-metadata-resolver.js';
+import type { MarketplacePluginEntry } from './marketplace-handler.js';
 
 /**
- * In-memory cache for transformed plugin packages.
+ * In-memory cache for transformed plugin packages with context.
  * Key: `${packageName}@${version}`
  */
-const transformedPluginCache = new Map<string, Package>();
+const transformedPluginCache = new Map<string, PackageWithContext>();
 
 /**
- * Cache a transformed plugin package for later retrieval.
+ * Cache a transformed plugin package with context for later retrieval.
  */
-export function cacheTransformedPlugin(pkg: Package): void {
+export function cacheTransformedPlugin(pkg: Package, context?: any): void {
   const key = `${pkg.metadata.name}@${pkg.metadata.version}`;
-  transformedPluginCache.set(key, pkg);
+  const cached: PackageWithContext = context 
+    ? { package: pkg, context }
+    : { package: pkg, context: createPlatformContext('claude-plugin', 1.0) };
+  transformedPluginCache.set(key, cached);
   logger.debug('Cached transformed plugin', { name: pkg.metadata.name, version: pkg.metadata.version });
 }
 
 /**
- * Retrieve a cached transformed plugin package.
+ * Retrieve a cached transformed plugin package with context.
  */
-export function getTransformedPlugin(name: string, version: string): Package | undefined {
+export function getTransformedPlugin(name: string, version: string): PackageWithContext | undefined {
   const key = `${name}@${version}`;
   return transformedPluginCache.get(key);
 }
@@ -38,27 +44,7 @@ export function clearPluginCache(): void {
   transformedPluginCache.clear();
 }
 
-/**
- * Claude Code plugin manifest schema.
- * See: https://code.claude.com/docs/en/plugins-reference
- */
-export interface ClaudePluginManifest {
-  name: string;
-  version?: string;
-  description?: string;
-  author?: {
-    name?: string;
-    email?: string;
-    url?: string;
-  };
-  homepage?: string;
-  repository?: {
-    type?: string;
-    url?: string;
-  };
-  license?: string;
-  keywords?: string[];
-}
+
 
 /**
  * Context for transforming a plugin with naming information.
@@ -67,48 +53,55 @@ export interface PluginTransformContext {
   gitUrl?: string;
   subdirectory?: string;
   repoPath?: string;
+  marketplaceEntry?: MarketplacePluginEntry;
+  marketplaceName?: string;  // Name of the marketplace (for proper scoping)
 }
 
 /**
- * Transform a Claude Code plugin to an OpenPackage Package.
+ * Transform a Claude Code plugin to an OpenPackage Package with conversion context.
  * 
- * Reads the plugin manifest (.claude-plugin/plugin.json), converts it to
+ * Resolves plugin metadata from plugin.json or marketplace entry, converts it to
  * OpenPackage format, and collects all plugin files.
  * 
  * @param pluginDir - Absolute path to plugin directory
- * @param context - Optional context for scoped naming (GitHub URL, subdirectory)
- * @returns Package object ready for installation
+ * @param context - Optional context for scoped naming and marketplace entry
+ * @returns Package object with conversion context
  */
 export async function transformPluginToPackage(
   pluginDir: string,
   context?: PluginTransformContext
-): Promise<Package> {
-  logger.debug('Transforming Claude Code plugin to OpenPackage format', { pluginDir, context });
+): Promise<PackageWithContext> {
+  logger.debug('Transforming Claude Code plugin to OpenPackage format', { 
+    pluginDir, 
+    context,
+    hasMarketplaceEntry: !!context?.marketplaceEntry
+  });
   
-  // Read and parse plugin manifest
-  const manifestPath = join(pluginDir, CLAUDE_PLUGIN_PATHS.PLUGIN_MANIFEST);
-  let pluginManifest: ClaudePluginManifest;
+  // Resolve plugin metadata from plugin.json or marketplace entry
+  const resolved = await resolvePluginMetadata(pluginDir, context?.marketplaceEntry);
+  const pluginManifest = resolved.manifest;
   
-  try {
-    const content = await readTextFile(manifestPath);
-    pluginManifest = JSON.parse(content);
-  } catch (error) {
-    throw new ValidationError(
-      `Failed to parse plugin manifest at ${manifestPath}: ${error}`
-    );
-  }
+  logger.debug('Resolved plugin metadata', {
+    source: resolved.source,
+    pluginName: pluginManifest.name
+  });
   
-  // Generate scoped name if GitHub context is provided
+  // Generate scoped name using consistent naming logic
+  // Always generate the name (no override) to ensure consistency
   const packageName = generatePluginName({
     gitUrl: context?.gitUrl,
     subdirectory: context?.subdirectory,
     pluginManifestName: pluginManifest.name,
+    marketplaceName: context?.marketplaceName,
     repoPath: context?.repoPath
   });
   
   logger.debug('Generated plugin name', { 
     original: pluginManifest.name, 
-    scoped: packageName 
+    scoped: packageName,
+    hasGitContext: !!context?.gitUrl,
+    hasSubdirectory: !!context?.subdirectory,
+    hasMarketplaceName: !!context?.marketplaceName
   });
   
   // Transform to OpenPackage metadata
@@ -129,33 +122,28 @@ export async function transformPluginToPackage(
     metadata.author = pluginManifest.author.name;
   }
   
-  // Extract repository
-  if (pluginManifest.repository?.url) {
-    metadata.repository = {
-      type: pluginManifest.repository.type || 'git',
-      url: pluginManifest.repository.url
-    };
+  // Extract repository - handle both string and object forms
+  if (pluginManifest.repository) {
+    if (typeof pluginManifest.repository === 'string') {
+      metadata.repository = {
+        type: 'git',
+        url: pluginManifest.repository
+      };
+    } else if (pluginManifest.repository.url) {
+      metadata.repository = {
+        type: pluginManifest.repository.type || 'git',
+        url: pluginManifest.repository.url
+      };
+    }
   }
   
   // Collect all plugin files (preserve entire directory structure)
   const files = await extractPluginFiles(pluginDir);
   
-  // Detect package format for conversion hints
+  // Detect package format
+  // Claude plugins are detected as platform-specific 'claude-plugin' format
+  // and will use the claude-plugin flows defined in platforms.jsonc
   const format = detectPackageFormat(files);
-  
-  // Claude plugins have universal structure but Claude-specific content (frontmatter)
-  // Mark as native Claude format: needs path mapping but no content transformation
-  // - isNativeFormat: true = content is already in target format (skip map/pipe transforms)
-  // - nativePlatform: 'claude' = this content is designed for Claude platform
-  // - platform: 'claude' = source format is Claude-specific
-  // 
-  // Installation behavior:
-  // - Installing to claude: Use path mappings only (commands/ → .claude/commands/)
-  // - Installing to other platforms: Full conversion (claude → universal → target)
-  format.type = 'platform-specific';
-  format.platform = 'claude';
-  format.isNativeFormat = true;
-  format.nativePlatform = 'claude';
   
   const pkg: Package = {
     metadata,
@@ -164,8 +152,11 @@ export async function transformPluginToPackage(
     _format: format
   };
   
-  // Cache the transformed plugin for later retrieval
-  cacheTransformedPlugin(pkg);
+  // Create conversion context for claude-plugin
+  const conversionContext = createPlatformContext('claude-plugin', format.confidence);
+  
+  // Cache the transformed plugin with context for later retrieval
+  cacheTransformedPlugin(pkg, conversionContext);
   
   logger.info('Transformed Claude Code plugin', {
     name: metadata.name,
@@ -176,7 +167,7 @@ export async function transformPluginToPackage(
     confidence: format.confidence
   });
   
-  return pkg;
+  return { package: pkg, context: conversionContext };
 }
 
 /**

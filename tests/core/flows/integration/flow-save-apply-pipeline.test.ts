@@ -17,16 +17,17 @@ import {
   shouldUseFlowsForSave,
   getFlowSaveStatistics,
   type FlowSaveOptions
-} from '../../../../../src/core/save/flow-based-saver.js';
+} from '../../../../src/core/save/flow-based-saver.js';
 import { 
-  installPackageWithFlows,
+  installPackageWithFlows, 
   type FlowInstallContext 
-} from '../../../../../src/core/install/flow-based-installer.js';
-import { runApplyPipeline } from '../../../../../src/core/apply/apply-pipeline.js';
-import { clearPlatformsCache } from '../../../../../src/core/platforms.js';
-import type { SaveCandidate } from '../../../../../src/core/save/save-types.js';
-import type { Platform } from '../../../../../src/core/platforms.js';
-import { writeWorkspaceIndex } from '../../../../../src/utils/workspace-index-yml.js';
+} from '../../../../src/core/install/flow-based-installer.js';
+import { buildApplyContext } from '../../../../src/core/install/unified/context-builders.js';
+import { runUnifiedInstallPipeline } from '../../../../src/core/install/unified/pipeline.js';
+import { clearPlatformsCache } from '../../../../src/core/platforms.js';
+import type { SaveCandidate } from '../../../../src/core/save/save-types.js';
+import type { Platform } from '../../../../src/core/platforms.js';
+import { writeWorkspaceIndex } from '../../../../src/utils/workspace-index-yml.js';
 
 // ============================================================================
 // Test Setup
@@ -565,10 +566,11 @@ describe('Flow-Based Apply Pipeline', () => {
       await fs.writeFile(join(workspaceRoot, 'AGENTS.md'), '# Modified Agent\n\nUpdated.', 'utf8');
       
       // Re-apply should restore original
-      const result = await runApplyPipeline('@test/conditional', {
+      const applyCtx = await buildApplyContext(workspaceRoot, '@test/conditional', {
         force: true,
         dryRun: false
       });
+      const result = await runUnifiedInstallPipeline(applyCtx);
       
       assert.strictEqual(result.success, true);
       
@@ -725,10 +727,11 @@ describe('Flow-Based Apply Pipeline', () => {
       });
       
       // Apply with force should restore original
-      const result = await runApplyPipeline('@test/override', {
+      const applyCtx = await buildApplyContext(workspaceRoot, '@test/override', {
         force: true,
         dryRun: false
       });
+      const result = await runUnifiedInstallPipeline(applyCtx);
       
       assert.strictEqual(result.success, true);
       
@@ -795,10 +798,11 @@ describe('Flow-Based Apply Pipeline', () => {
       });
       
       // Apply all packages
-      const result = await runApplyPipeline(undefined, {
+      const applyCtx = await buildApplyContext(workspaceRoot, '', {
         force: true,
         dryRun: false
       });
+      const result = await runUnifiedInstallPipeline(applyCtx);
       
       assert.strictEqual(result.success, true);
       

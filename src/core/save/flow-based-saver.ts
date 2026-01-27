@@ -10,7 +10,8 @@ import type { Platform } from '../platforms.js';
 import { 
   getPlatformDefinition, 
   getGlobalImportFlows,
-  platformUsesFlows 
+  platformUsesFlows,
+  deriveRootDirFromFlows
 } from '../platforms.js';
 import type { Flow, FlowContext, FlowResult } from '../../types/flows.js';
 import { createFlowExecutor } from '../flows/flow-executor.js';
@@ -87,12 +88,17 @@ function findReverseFlow(
 
   for (const flow of allImportFlows) {
     // Import flows use 'from' to match workspace files
+    // Skip switch expressions (they can't be used for matching in save)
+    if (typeof flow.from === 'object' && '$switch' in flow.from) {
+      continue;
+    }
     // For array patterns in 'from', try each pattern
     const fromPatterns = Array.isArray(flow.from) ? flow.from : [flow.from];
 
     for (const fromPattern of fromPatterns) {
       // Match the workspace file against the 'from' pattern
-      const match = matchWorkspacePathToPattern(normalizedWorkspacePath, fromPattern, definition.rootDir);
+      const rootDir = deriveRootDirFromFlows(definition);
+      const match = matchWorkspacePathToPattern(normalizedWorkspacePath, fromPattern, rootDir);
       
       if (match) {
         // Extract variables from the match (e.g., {name})
@@ -232,7 +238,9 @@ async function executeReverseFlow(
       packageRoot: cwd, // Source for save (reads from workspace)
       platform: '', // Not needed for reverse flow
       packageName: basename(packageRoot),
-      variables: {},
+      variables: {
+        targetRoot: packageRoot  // For save, target is the package directory
+      },
       direction: 'save',
       dryRun: options.dryRun ?? false
     };

@@ -3,8 +3,7 @@ import assert from 'node:assert';
 import {
   detectPackageFormat,
   isPlatformSpecific,
-  needsConversion,
-  shouldInstallDirectly
+  needsConversion
 } from '../../../src/core/install/format-detector.js';
 import type { PackageFile } from '../../../src/types/index.js';
 
@@ -173,58 +172,6 @@ describe('Format Detector', () => {
 
       assert.strictEqual(needsConversion(format, 'cursor'), true);
       assert.strictEqual(needsConversion(format, 'opencode'), true);
-    });
-  });
-
-  describe('shouldInstallDirectly', () => {
-    it('should return true when source = target platform', () => {
-      const format = {
-        type: 'platform-specific' as const,
-        platform: 'claude' as const,
-        confidence: 0.9,
-        analysis: {
-          universalFiles: 0,
-          platformSpecificFiles: 10,
-          detectedPlatforms: new Map([['claude', 10]]),
-          totalFiles: 10,
-          samplePaths: { universal: [], platformSpecific: ['.claude/commands/test.md'] }
-        }
-      };
-
-      assert.strictEqual(shouldInstallDirectly(format, 'claude'), true);
-    });
-
-    it('should return false when source != target platform', () => {
-      const format = {
-        type: 'platform-specific' as const,
-        platform: 'claude' as const,
-        confidence: 0.9,
-        analysis: {
-          universalFiles: 0,
-          platformSpecificFiles: 10,
-          detectedPlatforms: new Map([['claude', 10]]),
-          totalFiles: 10,
-          samplePaths: { universal: [], platformSpecific: ['.claude/commands/test.md'] }
-        }
-      };
-
-      assert.strictEqual(shouldInstallDirectly(format, 'cursor'), false);
-    });
-
-    it('should return false for universal format', () => {
-      const format = {
-        type: 'universal' as const,
-        confidence: 0.9,
-        analysis: {
-          universalFiles: 10,
-          platformSpecificFiles: 0,
-          detectedPlatforms: new Map(),
-          totalFiles: 10,
-          samplePaths: { universal: ['commands/test.md'], platformSpecific: [] }
-        }
-      };
-
-      assert.strictEqual(shouldInstallDirectly(format, 'claude'), false);
     });
   });
 

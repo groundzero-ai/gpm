@@ -4,48 +4,101 @@ import { CommandResult } from '../types/index.js';
 import { withErrorHandling, ValidationError } from '../utils/errors.js';
 import { runStatusPipeline, type StatusPackageReport } from '../core/status/status-pipeline.js';
 import { logger } from '../utils/logger.js';
+import { parsePackageYml } from '../utils/package-yml.js';
+import { getLocalPackageYmlPath } from '../utils/paths.js';
 
-interface CommandOptions {
-  verbose?: boolean;
+// ANSI escape codes for styling
+const DIM = '\x1b[2m';
+const RESET = '\x1b[0m';
+
+function dim(text: string): string {
+  return `${DIM}${text}${RESET}`;
 }
 
-function printPackageLine(
-  pkg: StatusPackageReport,
-  verbose: boolean
-): void {
-  const icon = pkg.state === 'synced' ? '✅' : pkg.state === 'missing' ? '❌' : '⚠️';
-  const version = pkg.version ? `@${pkg.version}` : '';
-  console.log(`${icon} ${pkg.name}${version}  ${pkg.state}  ${pkg.path}`);
+function printTreeView(workspaceName: string, workspaceVersion: string | undefined, packages: StatusPackageReport[], cwd: string): void {
+  // Omit version if it's 0.0.0 (unversioned)
+  const version = workspaceVersion && workspaceVersion !== '0.0.0' ? `@${workspaceVersion}` : '';
+  console.log(`${workspaceName}${version} ${cwd}`);
+  
+  if (packages.length === 0) {
+    return;
+  }
 
-  if (verbose && pkg.diffs.length > 0) {
-    for (const diff of pkg.diffs) {
-      const reason = diff.reason === 'missing' ? 'missing' : 'changed';
-      console.log(`   - ${reason}: ${diff.workspacePath || diff.sourcePath}`);
+  packages.forEach((pkg, index) => {
+    const isLast = index === packages.length - 1;
+    const treeChar = isLast ? '└──' : '├──';
+    
+    // Omit version if it's 0.0.0 (unversioned)
+    const pkgVersion = pkg.version && pkg.version !== '0.0.0' ? `@${pkg.version}` : '';
+    
+    // Add dimmed status indicator if not synced
+    let statusSuffix = '';
+    if (pkg.state === 'partial') {
+      statusSuffix = dim(` (partial ${pkg.existingFiles}/${pkg.totalFiles})`);
+    } else if (pkg.state === 'missing') {
+      statusSuffix = dim(' (missing)');
+    }
+    
+    console.log(`${treeChar} ${pkg.name}${pkgVersion}${statusSuffix}`);
+  });
+}
+
+function printDetailedView(pkg: StatusPackageReport): void {
+  // Omit version if it's 0.0.0 (unversioned)
+  const version = pkg.version && pkg.version !== '0.0.0' ? `@${pkg.version}` : '';
+  console.log(`${pkg.name}${version}`);
+  
+  // Status line
+  if (pkg.state === 'partial') {
+    console.log(`Status: ${pkg.state} (${pkg.existingFiles}/${pkg.totalFiles} files)`);
+  } else {
+    console.log(`Status: ${pkg.state}`);
+  }
+  
+  console.log(`Source: ${pkg.path}`);
+  
+  // Show files or error
+  if (pkg.state === 'missing') {
+    console.log('Error: Source directory not found');
+  } else if (pkg.fileList && pkg.fileList.length > 0) {
+    console.log(`Files (${pkg.fileList.length}):`);
+    for (const file of pkg.fileList) {
+      console.log(`  ${file.source} → ${file.target}`);
     }
   }
 }
 
-async function statusCommand(options: CommandOptions = {}): Promise<CommandResult> {
+async function statusCommand(packageName?: string): Promise<CommandResult> {
   const cwd = process.cwd();
   logger.info(`Checking package status for directory: ${cwd}`);
 
   try {
-    const result = await runStatusPipeline();
+    const result = await runStatusPipeline(packageName);
     const packages = result.data?.packages ?? [];
 
-    console.log(`✓ Package status for: ${cwd}`);
+    // If specific package requested, show detailed view
+    if (packageName) {
+      if (packages.length === 0) {
+        throw new ValidationError(`Package '${packageName}' not found in workspace index`);
+      }
+      printDetailedView(packages[0]);
+      return { success: true, data: { packages } };
+    }
+
+    // Otherwise show tree view
+    const manifestPath = getLocalPackageYmlPath(cwd);
+    let workspaceName = 'Unnamed';
+    let workspaceVersion: string | undefined;
     
-    if (packages.length === 0) {
-      console.log('(no packages in index)');
-      return { success: true, data: { packages: [] } };
+    try {
+      const manifest = await parsePackageYml(manifestPath);
+      workspaceName = manifest.name || 'Unnamed';
+      workspaceVersion = manifest.version;
+    } catch (error) {
+      logger.warn(`Failed to read workspace manifest: ${error}`);
     }
 
-    for (const pkg of packages) {
-      printPackageLine(pkg, Boolean(options.verbose));
-    }
-
-    const synced = packages.filter(p => p.state === 'synced').length;
-    console.log(`Summary: ${synced}/${packages.length} synced`);
+    printTreeView(workspaceName, workspaceVersion, packages, cwd);
 
     return { success: true, data: { packages } };
   } catch (error) {
@@ -59,10 +112,9 @@ async function statusCommand(options: CommandOptions = {}): Promise<CommandResul
 export function setupStatusCommand(program: Command): void {
   program
     .command('status')
-    .description('Show package sync state')
-    .option('--verbose', 'show file-level differences')
-    .action(withErrorHandling(async (options: CommandOptions) => {
-      await statusCommand(options);
+    .description('Show package installation status')
+    .argument('[package]', 'Optional package name to show detailed status')
+    .action(withErrorHandling(async (packageName?: string) => {
+      await statusCommand(packageName);
     }));
 }
-

@@ -13,6 +13,8 @@ The `--cwd` global option overrides the effective working directory for the enti
 
 This enables monorepo workflows without `cd` (e.g., `opkg install --cwd ./packages/web some-dep` installs into `./packages/web` from root).
 
+**Note**: The `--global` / `-g` flag (install and uninstall commands) **trumps** `--cwd`. If both are specified, `--cwd` is ignored and operations proceed in the home directory (`~/`).
+
 ### Behavior
 1. **Parsing & Timing**: Commander parses it as global (usable before/after subcommand). Processed in `preAction` hook *before* subcommand action runs (after arg validation).
 2. **Resolution**: Resolved to absolute via `path.resolve(originalProcessCwd, <dir>)` (relatives vs shell cwd, not target).
@@ -40,6 +42,86 @@ This enables monorepo workflows without `cd` (e.g., `opkg install --cwd ./packag
 - Validation fails prevent ops (safety).
 
 Cross-refs: [install-behavior.md] (installs to effective cwd), [save-modes-inputs.md] (saves from effective cwd), [package-root-layout.md] (root = effective cwd).
+
+---
+
+## `-g, --global`
+
+### Overview
+The `--global` (or `-g`) flag changes the target directory for install and uninstall operations to the user's home directory (`~/`). This enables system-wide package installations that apply across all projects rather than being scoped to a single workspace.
+
+**Available on:** `install`, `uninstall`
+
+### Behavior
+1. **Directory Change**: When `--global` is present, the CLI changes the working directory to `os.homedir()` before executing the command.
+2. **Priority**: `--global` **trumps** `--cwd`. If both are provided, `--cwd` is ignored and operations proceed in `~/`.
+3. **Manifest**: Creates/updates `~/openpackage.yml` for dependency tracking.
+4. **Platform Files**: Installs to `~/.cursor/`, `~/.claude/`, `~/.opencode/`, etc.
+5. **Root Files**: Copies to `~/` (with `root/` prefix stripped).
+
+### Use Cases
+- **System-wide configurations**: AI coding rules/commands that apply to all projects
+- **Personal dotfiles**: Manage home directory configurations as packages
+- **Shared settings**: Common preferences across multiple workspaces
+
+### Examples
+
+#### Install
+```bash
+# Install package globally
+opkg install -g shared-rules
+opkg install --global shared-rules
+
+# With platforms specified
+opkg install -g cursor-config --platforms cursor,claude
+
+# Global overrides --cwd
+opkg install -g my-package --cwd ./some-dir  # Installs to ~/, not ./some-dir
+```
+
+#### Uninstall
+```bash
+# Uninstall global package
+opkg uninstall -g shared-rules
+opkg uninstall --global shared-rules
+```
+
+### Validation
+- No special validation beyond standard directory checks (home directory should always exist and be writable)
+- If home directory is inaccessible, command fails early with appropriate error
+
+### Edge Cases
+- Works with any source type (registry, git, path, tarball)
+- Compatible with all other install/uninstall flags (`--platforms`, `--dry-run`, etc.)
+- `--cwd` is explicitly ignored when `--global` is present
+
+### Conditional Flows
+The `--global` flag enables conditional installation behavior through the `$$targetRoot` context variable in platform flows:
+
+**Platform Flow Example:**
+```jsonc
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".mcp.json",
+  "when": { "$ne": ["$$targetRoot", "~/"] }  // Install to .mcp.json when NOT global
+},
+{
+  "from": ["mcp.jsonc", "mcp.json"],
+  "to": ".claude.json",
+  "when": { "$eq": ["$$targetRoot", "~/"] }  // Install to .claude.json when global
+}
+```
+
+**How it works:**
+- Normal install: `$$targetRoot` = workspace directory (e.g., `/Users/john/project`)
+- Global install: `$$targetRoot` = home directory (e.g., `/Users/john`)
+- Conditions use path-aware comparison with tilde expansion and glob support
+
+**Result:**
+- `opkg install plugin` → Files go to `.mcp.json` (workspace)
+- `opkg install -g plugin` → Files go to `.claude.json` (global)
+
+See [Flow Reference](./platforms/flow-reference.md) for details on `$$targetRoot` and conditional flows.
 
 ---
 

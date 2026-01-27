@@ -25,7 +25,7 @@
 
   "antigravity": {
     "name": "Google Antigravity",
-    "rootDir": ".agent",
+    "detection": [".agent"],
     "export": [
       {
         "from": "rules/**/*.md",
@@ -58,7 +58,7 @@
 
   "augment": {
     "name": "Augment Code",
-    "rootDir": ".augment",
+    "detection": [".augment"],
     "export": [
       {
         "from": "rules/**/*.md",
@@ -81,10 +81,134 @@
     ]
   },
 
+  "claude-plugin": {
+    "name": "Claude Code Plugin",
+    "detection": [".claude-plugin/plugin.json"],
+    "export": [
+      {
+        "from": "openpackage.yml",
+        "to": ".claude-plugin/plugin.json"
+      },
+      {
+        "from": "rules/**/*.md",
+        "to": "rules/**/*.md"
+      },
+      {
+        "from": "commands/**/*.md",
+        "to": "commands/**/*.md"
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": "agents/**/*.md"
+      },
+      {
+        "from": "skills/**/*",
+        "to": "skills/**/*"
+      },
+      {
+        "from": "mcp.jsonc",
+        "to": ".mcp.json",
+        "map": [
+          // Claude plugin `.mcp.json` expects a bare server map:
+          //   { "linear": { ... } }
+          // Universal format is:
+          //   { "mcpServers": { "linear": { ... } } }
+          // Only transform keys under `mcpServers` (no-op if missing).
+          { "$rename": { "mcpServers.*": "*" } },
+          { "$unset": "mcpServers" }
+        ]
+      }
+    ],
+    "import": [
+      {
+        "from": ".claude-plugin/plugin.json",
+        "to": "openpackage.yml"
+      },
+      {
+        "from": "rules/**/*.md",
+        "to": "rules/**/*.md"
+      },
+      {
+        "from": "commands/**/*.md",
+        "to": "commands/**/*.md"
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": "agents/**/*.md",
+        // No mapping when target platform is Claude (already in Claude format)
+        "when": {
+          "$eq": ["$$platform", "claude"]
+        }
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": "agents/**/*.md",
+        // Apply reverse transformations when target platform is NOT Claude
+        "when": {
+          "$ne": ["$$platform", "claude"]
+        },
+        "map": [
+          // Reverse model transformation
+          {
+            "$pipeline": {
+              "field": "model",
+              "operations": [
+                // Step 1: Convert version hyphens back to dots
+                // claude-sonnet-4-20250514 → claude-sonnet-4.20250514
+                { "$replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } },
+                
+                // Step 2: Add anthropic/ prefix ONLY if:
+                //   - It starts with "claude-" (Claude model without prefix)
+                //   - NOT if it's "default"
+                //   - NOT if it already has "anthropic/"
+                { "$replace": { "pattern": "^(claude-.+)$", "with": "anthropic/$1" } }
+              ]
+            }
+          },
+          
+          // Reverse tools transformation: "Bash, Read" → [bash, read]
+          {
+            "$pipeline": {
+              "field": "tools",
+              "operations": [
+                // Step 1: Split "Read, Write, Bash" → ["Read", "Write", "Bash"]
+                { "$reduce": { "type": "split", "separator": ", " } },
+                // Step 2: Lowercase all (Read→read, Bash→bash, AskUserQuestion→askuserquestion)
+                { "$map": { "each": "lowercase" } },
+                // Step 3: Replace special cases AFTER lowercase
+                { "$map": {
+                    "replace": {
+                      "askuserquestion": "question",
+                      "notebookedit": "notebook",
+                      "exitplanmode": "exitplan"
+                    }
+                }}
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "from": "skills/**/*",
+        "to": "skills/**/*"
+      },
+      {
+        "from": ".mcp.json",
+        "to": "mcp.jsonc",
+        "map": [
+          // Claude plugin `.mcp.json` may be a bare server map:
+          //   { "linear": { ... } }
+          // Convert to universal format:
+          //   { "mcpServers": { "linear": { ... } } }
+          { "$rename": { "*": "mcpServers.*" } }
+        ]
+      }
+    ]
+  },
+
   "claude": {
     "name": "Claude Code",
-    "rootDir": ".claude",
-    "rootFile": "CLAUDE.md",
+    "detection": [".claude", "CLAUDE.md"],
     "aliases": ["claudecode"],
     "export": [
       {
@@ -103,36 +227,114 @@
       {
         "from": "agents/**/*.md",
         "to": ".claude/agents/**/*.md",
+        // No mapping when source is Claude plugin (already in Claude format)
+        "when": {
+          "$eq": ["$$source", "claude-plugin"]
+        }
+      },
+      {
+        "from": "agents/**/*.md",
+        "to": ".claude/agents/**/*.md",
+        // Apply transformations when source is NOT Claude plugin
+        "when": {
+          "$ne": ["$$source", "claude-plugin"]
+        },
         "map": [
-          // Set name from context
+          // 1. Inject filename as name (Claude requirement)
           { "$set": { "name": "$$filename" } },
-          // Transform model conditionally:
-          // - If it starts with "anthropic/", apply regex transformations
-          // - Otherwise, set to "default"
+          
+          // 2. Transform model: "provider/model-id" → Claude short names
           {
             "$pipeline": {
               "field": "model",
               "operations": [
-                // First, check if it's an Anthropic model. If not, replace with "default"
-                { "$replace": { "pattern": "^(?!anthropic/).*$", "with": "default" } },
-                // Then apply Anthropic transformations (these only affect anthropic/* models)
+                // Step 1: For non-Anthropic providers (openai/, google/, etc.), set to "inherit"
+                // But preserve Claude shorthand names (opus, sonnet, haiku) and full claude- model IDs
+                { "$replace": { "pattern": "^(?!anthropic/|claude-|opus$|sonnet$|haiku$).*/.+$", "with": "inherit" } },
+                // Step 2: Remove anthropic/ prefix
                 { "$replace": { "pattern": "^anthropic/", "with": "" } },
+                // Step 3: Convert version dots to hyphens: claude-sonnet-4.20250514 → claude-sonnet-4-20250514
                 { "$replace": { "pattern": "(-[0-9]+)\\.([0-9]+)", "with": "$1-$2", "flags": "g" } }
               ]
             }
           },
-          // Transform tools: object → string
+          
+          // 3. Transform tools: [read, write, bash] → "Read, Write, Bash"
           {
             "$pipeline": {
               "field": "tools",
               "operations": [
-                { "$filter": { "match": { "value": true } } },
-                { "$objectToArray": { "extract": "keys" } },
+                // Step 1: Replace special cases BEFORE capitalization
+                { "$map": { 
+                    "replace": {
+                      "question": "AskUserQuestion",
+                      "notebook": "NotebookEdit", 
+                      "exitplan": "ExitPlanMode"
+                    }
+                }},
+                // Step 2: Capitalize everything (handles read→Read, bash→Bash, etc.)
+                { "$map": { "each": "capitalize" } },
+                // Step 3: Join with comma-space
                 { "$reduce": { "type": "join", "separator": ", " } }
               ]
             }
           },
-          { "$unset": "permission" }
+          
+          // 4. Smart map permissions object → permissionMode string
+          // Only transform if permissions field exists
+          {
+            "$switch": {
+              "field": "permissions",
+              "cases": [
+                // Full automation: all allow
+                { 
+                  "pattern": { "edit": "allow", "bash": "allow", "webfetch": "allow" }, 
+                  "value": "bypassPermissions" 
+                },
+                { 
+                  "pattern": { "edit": "allow", "bash": "allow" }, 
+                  "value": "bypassPermissions" 
+                },
+                
+                // Auto-accept edits
+                { 
+                  "pattern": { "edit": "allow", "bash": "ask" }, 
+                  "value": "acceptEdits" 
+                },
+                { 
+                  "pattern": { "edit": "allow" }, 
+                  "value": "acceptEdits" 
+                },
+                
+                // Read-only mode
+                { 
+                  "pattern": { "edit": "deny", "bash": "deny" }, 
+                  "value": "plan" 
+                },
+                
+                // Deny unclear operations
+                { 
+                  "pattern": { "edit": "deny", "bash": "ask" }, 
+                  "value": "dontAsk" 
+                },
+                { 
+                  "pattern": { "edit": "deny", "bash": "allow" }, 
+                  "value": "dontAsk" 
+                },
+                
+                // Standard prompting
+                { 
+                  "pattern": { "edit": "ask", "bash": "ask" }, 
+                  "value": "default" 
+                },
+                { 
+                  "pattern": { "edit": "ask" }, 
+                  "value": "default" 
+                }
+              ]
+            }
+          },
+          { "$rename": { "permissions": "permissionMode" } }
         ]
       },
       {
@@ -142,6 +344,17 @@
       {
         "from": ["mcp.jsonc", "mcp.json"],
         "to": ".mcp.json",
+        "when": {
+          "$ne": ["$$targetRoot", "~/"]
+        },
+        "merge": "deep"
+      },
+      {
+        "from": ["mcp.jsonc", "mcp.json"],
+        "to": ".claude.json",
+        "when": {
+          "$eq": ["$$targetRoot", "~/"]
+        },
         "merge": "deep"
       }
     ],
@@ -163,37 +376,57 @@
         "from": ".claude/agents/**/*.md",
         "to": "agents/**/*.md",
         "map": [
-          // Remove the name field added during export
-          { "$unset": "name" },
-          
-          // Reverse model transformation
+          // Reverse model transformation: Claude short names → "anthropic/model-id"
           {
             "$pipeline": {
               "field": "model",
               "operations": [
-                // Step 1: Convert version hyphens back to dots
-                // claude-sonnet-4-20250514 → claude-sonnet-4.20250514
+                // Convert version hyphens back to dots: claude-sonnet-4-20250514 → claude-sonnet-4.20250514
                 { "$replace": { "pattern": "(-[0-9]+)-([0-9]+)", "with": "$1.$2", "flags": "g" } },
                 
-                // Step 2: Add anthropic/ prefix ONLY if:
-                //   - It starts with "claude-" (Claude model without prefix)
-                //   - NOT if it's "default"
-                //   - NOT if it already has "anthropic/"
+                // Add anthropic/ prefix if it's a Claude model (starts with "claude-")
+                // Skip if it's "inherit" or already has "anthropic/"
                 { "$replace": { "pattern": "^(claude-.+)$", "with": "anthropic/$1" } }
               ]
             }
           },
           
-          // Reverse tools transformation: "bash, read" → { bash: true, read: true }
+          // Reverse tools transformation: "Read, Write, Bash" → [read, write, bash]
           {
             "$pipeline": {
               "field": "tools",
               "operations": [
+                // Step 1: Split "Read, Write, Bash" → ["Read", "Write", "Bash"]
                 { "$reduce": { "type": "split", "separator": ", " } },
-                { "$arrayToObject": { "value": true } }
+                // Step 2: Lowercase all (Read→read, Bash→bash, AskUserQuestion→askuserquestion)
+                { "$map": { "each": "lowercase" } },
+                // Step 3: Replace special cases AFTER lowercase
+                { "$map": {
+                    "replace": {
+                      "askuserquestion": "question",
+                      "notebookedit": "notebook",
+                      "exitplanmode": "exitplan"
+                    }
+                }}
               ]
             }
-          }
+          },
+          
+          // Transform permissionMode → permissions object (best effort)
+          // Only transform if permissionMode field exists
+          {
+            "$switch": {
+              "field": "permissionMode",
+              "cases": [
+                { "pattern": "bypassPermissions", "value": { "edit": "allow", "bash": "allow" } },
+                { "pattern": "acceptEdits", "value": { "edit": "allow", "bash": "ask" } },
+                { "pattern": "plan", "value": { "edit": "deny", "bash": "deny" } },
+                { "pattern": "dontAsk", "value": { "edit": "deny", "bash": "ask" } },
+                { "pattern": "default", "value": { "edit": "ask", "bash": "ask" } }
+              ]
+            }
+          },
+          { "$rename": { "permissionMode": "permissions" } }
         ]
       },
       {
@@ -202,15 +435,24 @@
       },
       {
         "from": ".mcp.json",
-        "to": "mcp.jsonc"
+        "to": "mcp.jsonc",
+        "when": {
+          "$ne": ["$$targetRoot", "~/"]
+        }
+      },
+      {
+        "from": ".claude.json",
+        "to": "mcp.jsonc",
+        "when": {
+          "$eq": ["$$targetRoot", "~/"]
+        }
       }
     ]
   },
 
   "codex": {
     "name": "Codex CLI",
-    "rootDir": ".codex",
-    "rootFile": "AGENTS.md",
+    "detection": [".codex", "AGENTS.md"],
     "aliases": ["codexcli"],
     "export": [
       {
@@ -356,8 +598,7 @@
 
   "cursor": {
     "name": "Cursor",
-    "rootDir": ".cursor",
-    "rootFile": "AGENTS.md",
+    "detection": [".cursor", "AGENTS.md"],
     "export": [
       {
         "from": "rules/**/*.md",
@@ -407,8 +648,7 @@
 
   "factory": {
     "name": "Factory AI",
-    "rootDir": ".factory",
-    "rootFile": "AGENTS.md",
+    "detection": [".factory", "AGENTS.md"],
     "export": [
       {
         "from": "commands/**/*.md",
@@ -450,8 +690,7 @@
 
   "kilo": {
     "name": "Kilo Code",
-    "rootDir": ".kilocode",
-    "rootFile": "AGENTS.md",
+    "detection": [".kilocode", "AGENTS.md"],
     "aliases": ["kilocode"],
     "export": [
       {
@@ -494,7 +733,7 @@
 
   "kiro": {
     "name": "Kiro",
-    "rootDir": ".kiro",
+    "detection": [".kiro"],
     "export": [
       {
         "from": "rules/**/*.md",
@@ -520,42 +759,137 @@
 
   "opencode": {
     "name": "OpenCode",
-    "rootDir": ".opencode",
-    "rootFile": "AGENTS.md",
+    "detection": [".opencode", "AGENTS.md"],
     "export": [
       {
         "from": "commands/**/*.md",
-        "to": ".opencode/command/**/*.md"
+        "to": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/command/**/*.md" }
+            ],
+            "default": ".opencode/command/**/*.md"
+          }
+        }
       },
       {
         "from": "agents/**/*.md",
-        "to": ".opencode/agent/**/*.md"
+        "to": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/agent/**/*.md" }
+            ],
+            "default": ".opencode/agent/**/*.md"
+          }
+        },
+        "map": [
+          // 1. Transform tools: [read, write, bash] → { read: true, write: true, bash: true }
+          {
+            "$pipeline": {
+              "field": "tools",
+              "operations": [
+                { "$arrayToObject": { "value": true } }
+              ]
+            }
+          },
+          
+          // 2. Model field: pass through as-is (already in OpenCode format)
+          // 3. Permissions: pass through as-is (already in OpenCode format)
+          // 4. Claude-specific fields preserved (skills, hooks, disallowedTools) - ignored by OpenCode but kept for information preservation
+        ]
       },
       {
         "from": "skills/**/*",
-        "to": ".opencode/skill/**/*"
+        "to": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/skill/**/*" }
+            ],
+            "default": ".opencode/skill/**/*"
+          }
+        }
       },
       {
         "from": ["mcp.jsonc", "mcp.json"],
-        "to": ".opencode/opencode.json",
+        "to": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/opencode.json" }
+            ],
+            "default": ".opencode/opencode.json"
+          }
+        },
         "merge": "deep"
       }
     ],
     "import": [
       {
-        "from": ".opencode/command/**/*.md",
+        "from": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/command/**/*.md" }
+            ],
+            "default": ".opencode/command/**/*.md"
+          }
+        },
         "to": "commands/**/*.md"
       },
       {
-        "from": ".opencode/agent/**/*.md",
-        "to": "agents/**/*.md"
+        "from": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/agent/**/*.md" }
+            ],
+            "default": ".opencode/agent/**/*.md"
+          }
+        },
+        "to": "agents/**/*.md",
+        "map": [
+          // 1. Reverse tools transformation: { read: true, write: false, bash: true } → [read, bash]
+          {
+            "$pipeline": {
+              "field": "tools",
+              "operations": [
+                // Filter to only enabled tools
+                { "$filter": { "match": { "value": true } } },
+                // Extract keys
+                { "$objectToArray": { "extract": "keys" } }
+              ]
+            }
+          }
+          
+          // 2. Model field: pass through as-is (already in universal format)
+          // 3. Permissions: pass through as-is (already in universal format)
+        ]
       },
       {
-        "from": ".opencode/skill/**/*",
+        "from": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/skill/**/*" }
+            ],
+            "default": ".opencode/skill/**/*"
+          }
+        },
         "to": "skills/**/*"
       },
       {
-        "from": [".opencode/opencode.json", ".opencode/opencode.jsonc"],
+        "from": {
+          "$switch": {
+            "field": "$$targetRoot",
+            "cases": [
+              { "pattern": "~/", "value": ".config/opencode/opencode.json" }
+            ],
+            "default": ".opencode/opencode.json"
+          }
+        },
         "to": "mcp.jsonc"
       }
     ]
@@ -591,8 +925,7 @@
 
   "qwen": {
     "name": "Qwen Code",
-    "rootDir": ".qwen",
-    "rootFile": "QWEN.md",
+    "detection": [".qwen", "QWEN.md"],
     "aliases": ["qwencode"],
     "export": [
       {
@@ -637,8 +970,7 @@
 
   "roo": {
     "name": "Roo Code",
-    "rootDir": ".roo",
-    "rootFile": "AGENTS.md",
+    "detection": [".roo", "AGENTS.md"],
     "export": [
       {
         "from": "commands/**/*.md",
@@ -672,8 +1004,7 @@
 
   "warp": {
     "name": "Warp",
-    "rootDir": ".warp",
-    "rootFile": "WARP.md",
+    "detection": [".warp", "WARP.md"],
     "export": [
       {
         "from": "AGENTS.md",
@@ -692,7 +1023,7 @@
 
   "windsurf": {
     "name": "Windsurf",
-    "rootDir": ".windsurf",
+    "detection": [".windsurf"],
     "export": [
       {
         "from": "rules/**/*.md",

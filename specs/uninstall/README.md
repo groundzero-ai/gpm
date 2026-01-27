@@ -205,12 +205,31 @@ When removing keys, the uninstaller automatically cleans up empty parent objects
 ```
 
 ## Options
-- `--dry-run`: Preview deletions.
+- `--dry-run`: Preview deletions without applying them.
+- `-g, --global`: Uninstall from home directory (`~/`) instead of current workspace.
 - Force without prompt.
 
-## Example
+## Workspace Context
+The `uninstall` command operates on the workspace determined by the effective working directory (shell cwd or overridden by global `--cwd` flag). 
+
+With the `--global` / `-g` flag, the command operates on the home directory (`~/`) instead:
+- Reads `~/openpackage.yml` for package dependencies
+- Removes files from `~/.cursor/`, `~/.claude/`, etc.
+- Updates `~/openpackage.yml` and `~/.openpackage/openpackage.index.yml`
+
+The `--global` flag **trumps** `--cwd` - if both are specified, `--cwd` is ignored.
+
+## Examples
 ```bash
-opkg uninstall my-pkg  # Deletes mappings; updates files/index/yml
+# Uninstall from current workspace
+opkg uninstall my-pkg
+
+# Uninstall from home directory (global)
+opkg uninstall -g my-pkg
+opkg uninstall --global my-pkg
+
+# Preview global uninstall
+opkg uninstall -g my-pkg --dry-run
 ```
 
 ## Errors

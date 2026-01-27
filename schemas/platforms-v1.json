@@ -11,20 +11,18 @@
     "platformConfig": {
       "type": "object",
       "description": "Configuration for a single platform",
-      "required": ["name", "rootDir"],
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string",
           "description": "Display name of the platform"
         },
-        "rootDir": {
-          "type": "string",
-          "description": "Platform root directory (e.g., '.cursor', '.claude')",
-          "pattern": "^\\."
-        },
-        "rootFile": {
-          "type": "string",
-          "description": "Optional root file for platform detection (e.g., 'AGENTS.md')"
+        "detection": {
+          "type": "array",
+          "description": "Array of glob patterns for platform detection (e.g., ['.claude', 'CLAUDE.md'])",
+          "items": {
+            "type": "string"
+          }
         },
         "aliases": {
           "type": "array",
@@ -88,6 +86,10 @@
                 "type": "string"
               },
               "minItems": 1
+            },
+            {
+              "$ref": "#/definitions/switchExpression",
+              "description": "Switch expression for conditional source path resolution"
             }
           ]
         },
@@ -103,6 +105,10 @@
               "additionalProperties": {
                 "$ref": "#/definitions/multiTargetFlowConfig"
               }
+            },
+            {
+              "$ref": "#/definitions/switchExpression",
+              "description": "Switch expression for conditional target path resolution"
             }
           ]
         },
@@ -214,6 +220,58 @@
       }
     },
 
+    "switchExpression": {
+      "type": "object",
+      "description": "Switch expression for conditional target path resolution (MongoDB $switch inspired)",
+      "required": ["$switch"],
+      "properties": {
+        "$switch": {
+          "type": "object",
+          "required": ["field", "cases"],
+          "properties": {
+            "field": {
+              "type": "string",
+              "description": "Context variable to evaluate (e.g., '$$targetRoot')"
+            },
+            "cases": {
+              "type": "array",
+              "description": "Pattern cases to match (evaluated in order, first match wins)",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/switchCase"
+              }
+            },
+            "default": {
+              "type": "string",
+              "description": "Optional default value if no pattern matches"
+            }
+          }
+        }
+      }
+    },
+    "switchCase": {
+      "type": "object",
+      "description": "Switch case for pattern matching",
+      "required": ["pattern", "value"],
+      "properties": {
+        "pattern": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "String pattern for equality/glob matching"
+            },
+            {
+              "type": "object",
+              "description": "Object pattern for shape matching"
+            }
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Target path to use if pattern matches"
+        }
+      }
+    },
     "condition": {
       "type": "object",
       "description": "Conditions for flow execution",
@@ -232,6 +290,24 @@
         },
         "equals": {
           "description": "Key must equal specific value"
+        },
+        "$eq": {
+          "type": "array",
+          "description": "Equality check: [left, right] where left and right can be $$variables or literal values",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "string"
+          }
+        },
+        "$ne": {
+          "type": "array",
+          "description": "Not equal check: [left, right] where left and right can be $$variables or literal values",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "string"
+          }
         },
         "and": {
           "type": "array",
