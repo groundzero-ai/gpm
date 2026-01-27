@@ -56,7 +56,7 @@ export function serializeMarkdownDocument(content: any): string {
 
   const frontmatterYaml = yaml.dump(content.frontmatter, {
     indent: 2,
-    flowLevel: 1,
+    flowLevel: -1,
     lineWidth: -1,
     noRefs: true,
   });

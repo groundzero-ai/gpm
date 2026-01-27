@@ -691,7 +691,7 @@ export class DefaultFlowExecutor implements FlowExecutor {
 
         case 'yaml':
         case 'yml':
-          return yaml.dump(content, { indent: 2, flowLevel: 1, lineWidth: -1 });
+          return yaml.dump(content, { indent: 2, flowLevel: -1, lineWidth: -1 });
 
         case 'toml':
           // If a pipeline already produced TOML text (e.g. via domain transforms),
