@@ -146,18 +146,20 @@ export async function parseMarketplace(
 export async function promptPluginSelection(
   marketplace: MarketplaceManifest
 ): Promise<string[]> {
-  console.log(`\n✓ Marketplace: ${marketplace.name}`);
+  console.log(`✓ Marketplace: ${marketplace.name}`);
   if (marketplace.description) {
     console.log(`  ${marketplace.description}`);
   }
-  console.log(`\n${marketplace.plugins.length} plugin${marketplace.plugins.length === 1 ? '' : 's'} available:\n`);
-  
-  const choices = marketplace.plugins.map(plugin => ({
-    title: plugin.name,
-    value: plugin.name,
-    description: plugin.description || '',
-    selected: false
-  }));
+  console.log(`${marketplace.plugins.length} plugin${marketplace.plugins.length === 1 ? '' : 's'} available:`);
+
+  const choices = marketplace.plugins
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(plugin => ({
+      title: plugin.name,
+      value: plugin.name,
+      description: plugin.description || '',
+      selected: false
+    }));
   
   try {
     const response = await safePrompts({
@@ -212,7 +214,7 @@ export async function installMarketplacePlugins(
     plugins: selectedNames 
   });
   
-  console.log(`\nInstalling ${selectedNames.length} plugin${selectedNames.length === 1 ? '' : 's'}...\n`);
+  console.log(`Installing ${selectedNames.length} plugin${selectedNames.length === 1 ? '' : 's'}...`);
   
   const results: Array<{ 
     name: string; 
@@ -562,8 +564,6 @@ function displayInstallationSummary(
   const successful = results.filter(r => r.success);
   const failed = results.filter(r => !r.success);
   
-  console.log(`\n${'─'.repeat(60)}`);
-  
   if (successful.length > 0) {
     console.log(`✓ Successfully installed: ${successful.length} plugin${successful.length === 1 ? '' : 's'}`);
   }
@@ -574,6 +574,4 @@ function displayInstallationSummary(
       console.log(`  ${result.scopedName}: ${result.error}`);
     }
   }
-  
-  console.log(`${'─'.repeat(60)}\n`);
 }
