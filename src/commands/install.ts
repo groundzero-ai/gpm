@@ -137,50 +137,80 @@ async function handleMarketplaceInstallation(
   const {
     parseMarketplace,
     promptPluginSelection,
-    installMarketplacePlugins
+    installMarketplacePlugins,
+    validatePluginNames
   } = await import('../core/install/marketplace-handler.js');
   const { Spinner } = await import('../utils/spinner.js');
-  
+
   // Load the marketplace package (already loaded, use context data)
   if (!context.source.pluginMetadata?.manifestPath) {
     throw new Error('Marketplace manifest not found');
   }
-  
+
   const spinner = new Spinner('Loading marketplace');
   spinner.start();
-  
+
   // Parse marketplace manifest
   const marketplace = await parseMarketplace(context.source.pluginMetadata.manifestPath, {
     repoPath: context.source.contentRoot
   });
-  
+
   spinner.stop();
-  
-  // Prompt user to select plugins
-  const selectedPlugins = await promptPluginSelection(marketplace);
-  
-  if (selectedPlugins.length === 0) {
-    console.log('No plugins selected. Installation cancelled.');
-    return { success: true, data: { installed: 0, skipped: 0 } };
+
+  let selectedPlugins: string[];
+
+  // Check if --plugins flag was provided
+  if (options.plugins && options.plugins.length > 0) {
+    // Non-interactive mode: validate and use provided plugin names
+    const { valid, invalid } = validatePluginNames(marketplace, options.plugins);
+
+    if (invalid.length > 0) {
+      console.error(`Error: The following plugins were not found in marketplace '${marketplace.name}':`);
+      for (const name of invalid) {
+        console.error(`  - ${name}`);
+      }
+      console.error(`\nAvailable plugins: ${marketplace.plugins.map(p => p.name).join(', ')}`);
+      return {
+        success: false,
+        error: `Plugins not found: ${invalid.join(', ')}`
+      };
+    }
+
+    if (valid.length === 0) {
+      console.log('No valid plugins specified. Installation cancelled.');
+      return { success: true, data: { installed: 0, skipped: 0 } };
+    }
+
+    selectedPlugins = valid;
+    console.log(`✓ Marketplace: ${marketplace.name}`);
+    console.log(`Installing ${selectedPlugins.length} plugin${selectedPlugins.length === 1 ? '' : 's'}: ${selectedPlugins.join(', ')}`);
+  } else {
+    // Interactive mode: prompt user to select plugins
+    selectedPlugins = await promptPluginSelection(marketplace);
+
+    if (selectedPlugins.length === 0) {
+      console.log('No plugins selected. Installation cancelled.');
+      return { success: true, data: { installed: 0, skipped: 0 } };
+    }
   }
-  
+
   // Install selected plugins using marketplace handler
   // At this point we know it's a git source with a gitUrl
   if (context.source.type !== 'git' || !context.source.gitUrl) {
     throw new Error('Marketplace must be from a git source');
   }
-  
+
   // Get commitSha from source metadata
   const commitSha = (context.source as any)._commitSha || '';
   if (!commitSha) {
-    logger.error('Marketplace commit SHA not available', { 
+    logger.error('Marketplace commit SHA not available', {
       source: context.source,
       hasSourceMetadata: !!(context.source as any).sourceMetadata,
       _commitSha: (context.source as any)._commitSha
     });
     throw new Error('Marketplace commit SHA not available. Please report this issue.');
   }
-  
+
   return await installMarketplacePlugins(
     context.source.contentRoot!,
     marketplace,
