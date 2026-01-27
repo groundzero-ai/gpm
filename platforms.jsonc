@@ -895,6 +895,33 @@
     ]
   },
 
+  // Pi-Mono AI coding assistant framework
+  "pimono": {
+    "name": "Pi-Mono",
+    "detection": [".pi"],
+    "aliases": ["pi-mono", "pi"],
+    "export": [
+      {
+        "from": "commands/**/*.md",
+        "to": ".pi/agent/prompts/**/*.md"
+      },
+      {
+        "from": "skills/**/*",
+        "to": ".pi/agent/skills/**/*"
+      }
+    ],
+    "import": [
+      {
+        "from": ".pi/agent/prompts/**/*.md",
+        "to": "commands/**/*.md"
+      },
+      {
+        "from": ".pi/agent/skills/**/*",
+        "to": "skills/**/*"
+      }
+    ]
+  },
+
   "qwen": {
     "name": "Qwen Code",
     "detection": [".qwen", "QWEN.md"],
