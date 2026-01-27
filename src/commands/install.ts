@@ -43,6 +43,26 @@ export function validateResolutionFlags(options: InstallOptions & { local?: bool
 }
 
 /**
+ * Parse --plugins option value into an array of plugin names.
+ * Handles comma-separated values and trims whitespace.
+ *
+ * @param value - Raw option value (comma-separated string or undefined)
+ * @returns Array of plugin names, or undefined if empty/not provided
+ */
+export function parsePluginsOption(value: string | undefined): string[] | undefined {
+  if (!value || value.trim() === '') {
+    return undefined;
+  }
+
+  const plugins = value
+    .split(',')
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+
+  return plugins.length > 0 ? plugins : undefined;
+}
+
+/**
  * Main install command handler
  */
 async function installCommand(
@@ -244,6 +264,7 @@ export function setupInstallCommand(program: Command): void {
     .option('--local', 'resolve and install using only local registry versions, skipping remote metadata and pulls')
     .option('--profile <profile>', 'profile to use for authentication')
     .option('--api-key <key>', 'API key for authentication (overrides profile)')
+    .option('-p, --plugins <names>', 'install specific plugins from marketplace (comma-separated, bypasses interactive selection)')
     .action(withErrorHandling(async (packageName: string | undefined, options: InstallOptions) => {
       // Normalize platforms
       options.platforms = normalizePlatforms(options.platforms);
@@ -264,6 +285,9 @@ export function setupInstallCommand(program: Command): void {
         }
         options.conflictStrategy = normalizedStrategy as InstallOptions['conflictStrategy'];
       }
+
+      // Parse plugins option
+      options.plugins = parsePluginsOption((options as any).plugins);
 
       // Execute install
       const result = await installCommand(packageName, options);
