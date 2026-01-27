@@ -56,7 +56,9 @@ export function serializeMarkdownDocument(content: any): string {
 
   const frontmatterYaml = yaml.dump(content.frontmatter, {
     indent: 2,
-    flowLevel: 1,
+    // Keep mappings in block style; render sequences in flow style.
+    flowLevel: -1,
+    styles: { '!!seq': 'flow' },
     lineWidth: -1,
     noRefs: true,
   });
@@ -64,4 +66,3 @@ export function serializeMarkdownDocument(content: any): string {
   // Normalize with a blank line between frontmatter and body (common markdown convention).
   return `---\n${frontmatterYaml}---\n\n${body}`;
 }
-

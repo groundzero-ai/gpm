@@ -6,6 +6,9 @@ name: yaml-test
 description: "Universal description"
 globs:
   - "**/*.md"
+tools:
+  write: true
+  edit: true
 openpackage:
   cursor:
     description: "Cursor-optimized description"
@@ -35,6 +38,15 @@ assert.ok(
 assert.ok(
   !mergedCursor.includes('openpackage:'),
   'Merged output should not emit openpackage override blocks'
+);
+
+assert.ok(
+  mergedCursor.includes('tools:\n  write: true'),
+  'Merged output should preserve block-style nested mappings (tools)'
+);
+assert.ok(
+  !mergedCursor.includes('tools: {'),
+  'Merged output should not render nested mappings in flow style (tools: {...})'
 );
 
 console.log('✓ Inline merge applies platform block and drops platform sections');
@@ -70,4 +82,3 @@ assert.strictEqual(
 );
 
 console.log('\n✅ All inline frontmatter override merge tests passed!');
-
