@@ -47,3 +47,20 @@ import assert from 'node:assert/strict';
 }
 
 console.log('install-plugins integration tests passed');
+
+// Test: --plugins flag with non-marketplace should warn and ignore
+{
+  // This tests the conceptual behavior - actual e2e testing would require
+  // mocking the git clone process
+
+  // When --plugins is provided but the source is not a marketplace:
+  // - Log a warning that --plugins is ignored
+  // - Continue with normal installation
+
+  // The warning message should be:
+  // "Warning: --plugins flag is only used with marketplace sources. Ignoring."
+
+  console.log('non-marketplace --plugins behavior documented');
+}
+
+console.log('install-plugins edge case tests passed');

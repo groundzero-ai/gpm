@@ -109,7 +109,12 @@ async function installCommand(
     if (contexts.source.pluginMetadata?.pluginType === 'marketplace') {
       return await handleMarketplaceInstallation(contexts, options, cwd);
     }
-    
+
+    // Not a marketplace - warn if --plugins was specified
+    if (options.plugins && options.plugins.length > 0) {
+      console.log('Warning: --plugins flag is only used with marketplace sources. Ignoring.');
+    }
+
     // Not a marketplace, continue with normal pipeline
     // Create resolved package for the loaded package
     contexts.resolvedPackages = [{
