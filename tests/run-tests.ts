@@ -50,6 +50,8 @@ const testFiles: string[] = [
   // Commands
   'tests/commands/pack.test.ts',
   'tests/commands/status.test.ts',
+  'tests/commands/install-plugins-flag.test.ts',
+  'tests/commands/install-plugins-integration.test.ts',
   
   // Utils
   'tests/utils/version-selection.test.ts',

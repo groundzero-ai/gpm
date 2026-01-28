@@ -84,9 +84,18 @@ opkg install ../packages/essentials/  # Local path
 # GitHub package repo
 opkg install git:https://github.com/enulus/awesome-openpackage.git    
 
-# GitHub Claude Code Plugins marketplace          
+# GitHub Claude Code Plugins marketplace
 opkg install github:anthropics/claude-code
-```  
+```
+
+For marketplaces, use `--plugins` (or `-p`) to install specific plugins non-interactively:
+```bash title="Terminal"
+# Install specific plugins by name (bypasses interactive selection)
+opkg install github:anthropics/claude-code --plugins plugin1,plugin2
+
+# Short flag with multiple plugins
+opkg install github:user/marketplace -p "plugin-a, plugin-b, plugin-c"
+```
 
 Use the `--global` (or `-g`) option to install files to user scope:
 ```bash title="Terminal"
